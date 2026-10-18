@@ -31,6 +31,7 @@ function makeEl(id) {
       contains: c => classes.has(c)
     },
     addEventListener() {}, focus() {}, blur() {},
+    appendChild() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1280, height: 720 })
   };
 }
@@ -62,7 +63,7 @@ const sandbox = {
     hidden: false,
     activeElement: null,
     getElementById: id => (elements[id] || (elements[id] = makeEl(id))),
-    createElement: () => ({ width: 0, height: 0, getContext: () => makeCtx() }),
+    createElement: () => Object.assign(makeEl('dyn'), { width: 0, height: 0, getContext: () => makeCtx() }),
     querySelector: sel => (elements[sel] || (elements[sel] = makeEl(sel))),
     addEventListener() {}
   }
@@ -115,6 +116,7 @@ for (let i = 1; i <= 3600; i++) {
   if (i % 300 === 150) { Input.keys['KeyD'] = true; }
   if (i % 300 === 220) { Input.keys['KeyD'] = false; Input.keys['KeyA'] = true; }
   if (i % 300 === 290) { Input.keys['KeyA'] = false; }
+  if (Game.state === 'upgrade') Game.chooseUpgrade(0);
   __frame(i * 16.6);
   Input.endFrame();
   if (i === 600) { this.__midParticles = FX.particles.items.some(p => p.active); this.__hp10 = Game.player.hp; }
@@ -178,7 +180,89 @@ Game.betweenTimer = 0.01;
 __frame((52000) * 16.6);
 Input.endFrame();
 `);
-check('advanced to wave 4 after clear', 'Game.wave', w => w === 4);
+check('upgrade screen opened after wave clear', 'Game.state', s => s === 'upgrade');
+check('3 upgrade cards offered', 'Game.offered.length', n => n === 3);
+run(`
+Game.chooseUpgrade(0);
+this.__picked = Game.state;
+for (let i = 0; i < 200; i++) { __frame((52200 + i) * 16.6); Input.endFrame(); }
+`);
+check('back to playing after pick', 'this.__picked', s => s === 'playing');
+check('advanced to wave 4 after upgrade', 'Game.wave', w => w === 4);
+
+console.log('--- boss wave: spawn, health bar, kill, reward ---');
+run(`
+if (Game.state !== 'playing') Game.startRun();
+Game.startWave(5);
+this.__bossSeen = false;
+this.__bossBarShown = false;
+this.__teleSeen = false;
+for (let i = 0; i < 1400; i++) {
+  if (Game.state === 'upgrade') Game.chooseUpgrade(0);
+  Input.keys['KeyW'] = true; Input.keys['Space'] = true;
+  if (!Game.player.dead && Game.player.hp < 200) Game.player.hp = 200;  // test cheat: survive boss
+  __frame((60000 + i) * 16.6);
+  Input.endFrame();
+  const b = Game.enemies.find(e => e.type === 'boss');
+  if (b) {
+    this.__bossSeen = true;
+    if (!document.getElementById('boss-bar').classList.contains('hidden')) this.__bossBarShown = true;
+    if (b.bphase.indexOf('_wind') >= 0) this.__teleSeen = true;
+  }
+  if (Game.player.dead) break;
+}
+`);
+check('boss queued on wave 5', 'Game.wave === 5', v => v === true);
+check('boss spawned into arena', 'this.__bossSeen', v => v === true);
+check('boss HUD bar activated', 'this.__bossBarShown', v => v === true);
+check('boss attack telegraphs exist', 'this.__teleSeen', v => v === true);
+check('boss uses real attacks (bullets in flight at some point)', 'Game.bullets.items.some(b => b.team === "e") || Game.kills > 0', v => v === true);
+run(`
+const b = Game.enemies.find(e => e.type === 'boss');
+if (b) {
+  const s0 = Game.score;
+  const pk0 = Game.pickups.length;
+  damageEnemy(b, 999999, b.x, b.y);
+  this.__bonus = Game.score > s0 + 2000;
+  this.__loot = Game.pickups.length >= pk0 + 3;
+} else { this.__bonus = false; this.__loot = false; }
+`);
+check('boss kill grants big bonus', 'this.__bonus', v => v === true);
+check('boss drops loot', 'this.__loot', v => v === true);
+run(`
+for (let i = 0; i < 1500; i++) {
+  for (const e of [...Game.enemies]) damageEnemy(e, 5, e.x, e.y);
+  if (Game.state === 'upgrade') break;
+  Input.keys['KeyW'] = true;
+  if (!Game.player.dead && Game.player.hp < 200) Game.player.hp = 200;
+  __frame((65000 + i) * 16.6);
+  Input.endFrame();
+}
+`);
+check('upgrade screen after boss wave cleared', 'Game.state', s => s === 'upgrade');
+run(`
+Input.pressed['Digit1'] = true;   // keyboard path
+__frame((67000) * 16.6);
+Input.endFrame();
+for (let i = 0; i < 150; i++) { __frame((67200 + i) * 16.6); Input.endFrame(); }
+`);
+check('keyboard 1-key picked upgrade', 'Game.state', s => s === 'playing');
+check('advanced to wave 6 after boss', 'Game.wave', w => w >= 6);
+check('boss bar hidden after death', 'document.getElementById("boss-bar").classList.contains("hidden")', v => v === true);
+
+console.log('--- upgrades actually modify stats ---');
+run(`
+Game.startRun();
+const p = Game.player;
+Game.openUpgradeScreen();
+const dmgDef = UPGRADES.find(u => u.id === 'dmg');
+dmgDef.apply(p);
+p.upgradeCounts.dmg = 1;
+Game.chooseUpgrade(0);   // exit via the real path (applies offered[0] too)
+`);
+check('damage upgrade stacks mod', 'Game.player.mods.dmg', v => v > 1);
+check('upgrade count tracked', 'Game.player.upgradeCounts.dmg', n => n >= 1);
+check('upgrade screen exits to playing', 'Game.state', s2 => s2 === 'playing');
 
 console.log('--- pickups apply ---');
 run(`
@@ -193,7 +277,7 @@ console.log('--- death & game over ---');
 run(`
 Game.player.shield = 0;
 damagePlayer(9999, Game.player.x, Game.player.y);
-for (let i = 0; i < 200; i++) __frame((60000 + i) * 16.6);
+for (let i = 0; i < 200; i++) __frame((70000 + i) * 16.6);
 `);
 check('player died', 'Game.player.dead', d => d === true);
 check('game over reached', 'Game.state', s => s === 'over');

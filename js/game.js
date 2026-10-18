@@ -91,6 +91,21 @@ function makeCarSprite(o) {
     g.lineTo(hl * 0.3, hw * 0.55);
     g.closePath();
     g.fill();
+    // heavy armor plating (boss)
+    if (o.heavy && !white) {
+      g.fillStyle = 'rgba(0,0,0,0.3)';
+      g.fillRect(-hl * 0.72, -hw * 1.02, o.len * 0.55, 4.5);
+      g.fillRect(-hl * 0.72, hw * 1.02 - 4.5, o.len * 0.55, 4.5);
+      g.strokeStyle = 'rgba(255,255,255,0.16)';
+      g.lineWidth = 2;
+      g.beginPath(); g.moveTo(-hl * 0.38, -hw * 0.82); g.lineTo(-hl * 0.38, hw * 0.82); g.stroke();
+      g.beginPath(); g.moveTo(hl * 0.42, -hw * 0.75); g.lineTo(hl * 0.42, hw * 0.75); g.stroke();
+      g.fillStyle = 'rgba(255,255,255,0.22)';
+      for (const bx of [-hl * 0.55, 0, hl * 0.55]) {
+        g.fillRect(bx - 1.5, -hw * 0.92, 3, 3);
+        g.fillRect(bx - 1.5, hw * 0.92 - 3, 3, 3);
+      }
+    }
     // headlights
     if (!white) {
       g.shadowColor = '#ffe9b3';
@@ -202,11 +217,27 @@ const ENEMY_TYPES = {
   rammer: { r: 19, hp: 26, speed: 332, accel: 560, turn: 3.1, score: 100, color: '#e0246e', glow: '#ff3d81', contact: 8, ai: 'ram', mass: 3.6 },
   gunner: { r: 20, hp: 32, speed: 300, accel: 520, turn: 3.3, score: 150, color: '#e07f22', glow: '#ff9a3d', contact: 9, ai: 'gun', fireCd: 1.6, mass: 4 },
   brute:  { r: 30, hp: 155, speed: 235, accel: 400, turn: 2.1, score: 300, color: '#8a3fd4', glow: '#b06cff', contact: 22, ai: 'ram', mass: 9 },
-  inter:  { r: 18, hp: 34, speed: 400, accel: 700, turn: 3.7, score: 250, color: '#1dbb6a', glow: '#58ff9b', contact: 10, ai: 'dash', mass: 3.2 }
+  inter:  { r: 18, hp: 34, speed: 400, accel: 700, turn: 3.7, score: 250, color: '#1dbb6a', glow: '#58ff9b', contact: 10, ai: 'dash', mass: 3.2 },
+  boss:   { r: 40, hp: 780, speed: 250, accel: 400, turn: 1.55, score: 2500, color: '#c22a55', glow: '#ff2255', contact: 24, ai: 'boss', mass: 14 }
 };
 
 const PLAYER_STATS = { accel: 640, maxF: 430, turn: 3.35, grip: 8.5 };
 const BOOST_STATS = { accel: 960, maxF: 650, turn: 2.9, grip: 7.0 };
+const _pStats = { accel: 0, maxF: 0, turn: 0, grip: 0 };
+
+/* ---------- roguelite upgrades: offered 1-of-3 after every cleared wave ---------- */
+const UPGRADES = [
+  { id: 'dmg',    icon: '\uD83D\uDCA5', name: 'HEAVY ROUNDS',   desc: '+25% gun damage',                 max: 6, apply: p => { p.mods.dmg += 0.25; } },
+  { id: 'rate',   icon: '\u26A1', name: 'RAPID FIRE',     desc: '+15% fire rate',                  max: 6, apply: p => { p.mods.fireRate += 0.15; } },
+  { id: 'rocket', icon: '\uD83D\uDE80', name: 'EXTRA TUBE',     desc: '+1 rocket capacity, load 1 now',  max: 3, apply: p => { p.maxRockets++; p.rockets = Math.min(p.rockets + 1, p.maxRockets); } },
+  { id: 'hull',   icon: '\uD83D\uDEE1\uFE0F', name: 'ARMOR PLATING',  desc: '+25 max hull, repair 25',         max: 5, apply: p => { p.maxHp += 25; p.hp = Math.min(p.maxHp, p.hp + 25); } },
+  { id: 'engine', icon: '\uD83C\uDFCE\uFE0F', name: 'TURBO ENGINE',   desc: '+10% top speed & acceleration',   max: 5, apply: p => { p.mods.speed += 0.10; } },
+  { id: 'grip',   icon: '\uD83C\uDF00', name: 'GRIP TIRES',     desc: '+12% turn rate',                  max: 4, apply: p => { p.mods.turn += 0.12; } },
+  { id: 'nitro',  icon: '\uD83D\uDCA8', name: 'NITRO FLOW',     desc: '+50% nitro recharge',             max: 4, apply: p => { p.mods.nitroRegen += 0.5; } },
+  { id: 'magnet', icon: '\uD83E\uDF22', name: 'SCRAP MAGNET',   desc: '+60% pickup pickup range',        max: 3, apply: p => { p.mods.magnet += 0.6; } },
+  { id: 'gold',   icon: '\uD83D\uDCB0', name: 'BOUNTY DEAL',    desc: '+15% score from kills',           max: 5, apply: p => { p.mods.scoreMult += 0.15; } },
+  { id: 'repair', icon: '\uD83D\uDD27', name: 'FIELD REPAIR',   desc: 'Repair 60 hull instantly',        max: 99, cond: p => p.hp < p.maxHp * 0.9, apply: p => { p.hp = Math.min(p.maxHp, p.hp + 60); } }
+];
 
 /* ============================================================
    Game
@@ -285,7 +316,9 @@ const Game = {
       boost: 100, rockets: 2, maxRockets: 3, rocketRegen: 0,
       fireCd: 0, triple: 0, shield: 0,
       boosting: false, flash: 0, skidT: 0, smokeT: 0,
-      contactCd: 0, dead: false
+      contactCd: 0, dead: false,
+      mods: { dmg: 1, fireRate: 1, speed: 1, turn: 1, nitroRegen: 1, magnet: 1, scoreMult: 1 },
+      upgradeCounts: {}
     };
     this.cam.x = this.player.x;
     this.cam.y = this.player.y;
@@ -304,6 +337,8 @@ const Game = {
     this.timeScale = 1;
     this.hitStop = 0;
     this.hudCache = {};
+    this.pendingUpgrades = false;
+    this.offered = [];
   },
 
   genPillars() {
@@ -401,8 +436,15 @@ const Game = {
     if (this.state === 'playing') {
       if (this.betweenWaves) {
         this.betweenTimer -= dt;
-        if (this.betweenTimer <= 0) this.startWave(this.wave + 1);
-      } else if (this.spawnQueue.length === 0 && this.portals.length === 0 && this.enemies.length === 0) {
+        if (this.betweenTimer <= 0) {
+          if (this.pendingUpgrades) {
+            this.pendingUpgrades = false;
+            this.openUpgradeScreen();
+          } else {
+            this.startWave(this.wave + 1);
+          }
+        }
+      } else if (!this.player.dead && this.spawnQueue.length === 0 && this.portals.length === 0 && this.enemies.length === 0) {
         this.waveCleared();
       }
     }
@@ -481,10 +523,15 @@ const Game = {
     const wantBoost = Input.getBoost() && p.boost > 2 && throttle > 0.1;
     p.boosting = wantBoost;
     if (wantBoost) p.boost = Math.max(0, p.boost - 36 * dt);
-    else p.boost = Math.min(100, p.boost + 13 * dt);
+    else p.boost = Math.min(100, p.boost + 13 * p.mods.nitroRegen * dt);
 
-    const stats = wantBoost ? BOOST_STATS : PLAYER_STATS;
-    driveCar(p, throttle, steer, dt, stats);
+    const base = wantBoost ? BOOST_STATS : PLAYER_STATS;
+    const m = p.mods;
+    _pStats.accel = base.accel * m.speed;
+    _pStats.maxF = base.maxF * m.speed;
+    _pStats.turn = base.turn * m.turn;
+    _pStats.grip = base.grip;
+    driveCar(p, throttle, steer, dt, _pStats);
 
     // skid marks + sound
     const slip = Math.abs(p.vl || 0);
@@ -550,7 +597,7 @@ const Game = {
     // ----- fire -----
     p.fireCd -= dt;
     if (Input.getFire() && p.fireCd <= 0) {
-      p.fireCd = p.triple > 0 ? 0.13 : 0.115;
+      p.fireCd = (p.triple > 0 ? 0.13 : 0.115) / p.mods.fireRate;
       const nx = p.x + Math.cos(p.angle) * 24;
       const ny = p.y + Math.sin(p.angle) * 24;
       const angles = p.triple > 0 ? [-0.12, 0, 0.12] : [0];
@@ -564,7 +611,7 @@ const Game = {
         b.vy = Math.sin(a) * 950 + p.vy * 0.35;
         b.life = 0.8;
         b.team = 'p';
-        b.dmg = p.triple > 0 ? 7 : 9;
+        b.dmg = (p.triple > 0 ? 7 : 9) * p.mods.dmg;
       }
       FX.muzzle(nx + Math.cos(p.turret) * 10, ny + Math.sin(p.turret) * 10, p.turret, '#ffd24d');
       AudioSys.shoot();
@@ -623,7 +670,7 @@ const Game = {
     if (this.spawnTimer <= 0 && this.enemies.length + this.portals.length < 11) {
       const type = this.spawnQueue.shift();
       const pos = this.findSpawnPos();
-      this.portals.push({ x: pos.x, y: pos.y, type, t: 0, dur: 0.9 });
+      this.portals.push({ x: pos.x, y: pos.y, type, t: 0, dur: type === 'boss' ? 1.8 : 0.9, big: type === 'boss' });
       this.spawnTimer = rand(0.45, 0.85);
     }
   },
@@ -661,39 +708,57 @@ const Game = {
   spawnEnemy(type, x, y) {
     const def = ENEMY_TYPES[type];
     const hpScale = 1 + (this.wave - 1) * 0.055;
+    const hp = type === 'boss' ? def.hp + this.wave * 80 : def.hp * hpScale;
     const e = {
       type, def, team: 'enemy',
       x, y, angle: Math.atan2(this.player.y - y, this.player.x - x),
       vx: 0, vy: 0, r: def.r, mass: def.mass,
-      hp: def.hp * hpScale, maxHp: def.hp * hpScale,
+      hp, maxHp: hp,
       fireCd: rand(0.9, 1.8), contactCd: 0, retreatT: 0, flash: 0,
       seed: rand(TAU), ai: def.ai, phase: 'cruise', phaseT: rand(0.6, 1.6),
+      bphase: 'approach', rage: false,
       orbitDir: Math.random() < 0.5 ? 1 : -1,
       boosting: false, skidT: 0, smokeT: 0, wander: false
     };
     this.enemies.push(e);
-    FX.glowBurst(x, y, def.glow, 12, 300);
-    FX.ring(x, y, def.glow, 34, 0.4);
+    FX.glowBurst(x, y, def.glow, type === 'boss' ? 26 : 12, type === 'boss' ? 420 : 300);
+    FX.ring(x, y, def.glow, type === 'boss' ? 70 : 34, type === 'boss' ? 0.7 : 0.4);
+    if (type === 'boss') {
+      FX.addShake(6);
+      banner('\u26A0 WARLORD \u26A0');
+    }
   },
 
   startWave(n) {
     this.wave = n;
     this.betweenWaves = false;
     const list = [];
-    const count = Math.min(2 + n * 2, 26);
-    for (let i = 0; i < count; i++) {
-      const r = Math.random();
-      let t = 'rammer';
-      if (n >= 2 && r < 0.3) t = 'gunner';
-      else if (n >= 3 && r > 0.88) t = 'brute';
-      else if (n >= 4 && r > 0.6 && r < 0.74) t = 'inter';
-      list.push(t);
+    if (n % 5 === 0) {
+      // ===== boss wave =====
+      list.push('boss');
+      const minions = 1 + Math.floor(n / 5);
+      for (let i = 0; i < minions; i++) {
+        const r = Math.random();
+        list.push(n >= 10 && r < 0.4 ? 'inter' : r < 0.6 ? 'gunner' : 'rammer');
+      }
+      banner('\u26A0 BOSS WAVE \u26A0');
+      AudioSys.bossHorn();
+    } else {
+      const count = Math.min(2 + n * 2, 26);
+      for (let i = 0; i < count; i++) {
+        const r = Math.random();
+        let t = 'rammer';
+        if (n >= 2 && r < 0.3) t = 'gunner';
+        else if (n >= 3 && r > 0.88) t = 'brute';
+        else if (n >= 4 && r > 0.6 && r < 0.74) t = 'inter';
+        list.push(t);
+      }
+      if (n % 5 === 4) list.push('brute');
+      banner('WAVE ' + n);
+      AudioSys.waveHorn();
     }
-    if (n % 5 === 0) list.push('brute', 'brute');
     this.spawnQueue = list;
-    this.spawnTimer = 0.35;
-    banner('WAVE ' + n);
-    AudioSys.waveHorn();
+    this.spawnTimer = n % 5 === 0 ? 0.7 : 0.35;
   },
 
   waveCleared() {
@@ -704,7 +769,60 @@ const Game = {
     banner('WAVE ' + this.wave + ' CLEARED');
     AudioSys.pickup();
     this.betweenWaves = true;
-    this.betweenTimer = 2.4;
+    this.betweenTimer = 2.0;
+    this.pendingUpgrades = true;
+  },
+
+  openUpgradeScreen() {
+    if (this.player.dead) {
+      this.pendingUpgrades = false;
+      return;
+    }
+    const p = this.player;
+    const pool = UPGRADES.filter(u => (p.upgradeCounts[u.id] || 0) < u.max && (!u.cond || u.cond(p)));
+    this.offered = [];
+    const bag = pool.slice();
+    while (this.offered.length < 3 && bag.length > 0) {
+      this.offered.push(bag.splice((Math.random() * bag.length) | 0, 1)[0]);
+    }
+    if (this.offered.length === 0) {
+      this.betweenTimer = 0.6;
+      return;
+    }
+    const wrap = document.getElementById('upgrade-cards');
+    wrap.innerHTML = '';
+    this.offered.forEach((u, i) => {
+      const lv = p.upgradeCounts[u.id] || 0;
+      const btn = document.createElement('button');
+      btn.className = 'card';
+      btn.innerHTML = '<span class="ic">' + u.icon + '</span>' +
+        '<span class="nm">' + u.name + '</span>' +
+        '<span class="ds">' + u.desc + '</span>' +
+        '<span class="lv">' + (lv ? 'LV ' + (lv + 1) : 'NEW') + '</span>' +
+        '<span class="key">' + (i + 1) + '</span>';
+      btn.addEventListener('click', () => this.chooseUpgrade(i));
+      wrap.appendChild(btn);
+    });
+    this.state = 'upgrade';
+    setScreen('upgrade');
+    AudioSys.ui();
+  },
+
+  chooseUpgrade(i) {
+    if (this.state !== 'upgrade') return;
+    const u = this.offered[i];
+    if (!u) return;
+    const p = this.player;
+    u.apply(p);
+    p.upgradeCounts[u.id] = (p.upgradeCounts[u.id] || 0) + 1;
+    AudioSys.pickup();
+    FX.text(p.x, p.y - 46, u.icon + ' ' + u.name, '#35f0ff', 18);
+    FX.ring(p.x, p.y, '#35f0ff', 42, 0.5);
+    this.offered = [];
+    this.state = 'playing';
+    setScreen(null);
+    this.betweenTimer = 1.0;
+    this.hudCache.wave = null;
   },
 
   updateEnemy(e, dt) {
@@ -775,6 +893,103 @@ const Game = {
         e.boosting = true;
         if (e.phaseT <= 0) { e.phase = 'cruise'; e.phaseT = rand(1.1, 2.1); e.boosting = false; }
       }
+    } else if (e.ai === 'boss') {
+      // ===== BOSS: approach / volley / dash / summon, rage below 50% =====
+      e.phaseT -= dt;
+      const ang = Math.atan2(p.y - e.y, p.x - e.x);
+      const d = Math.hypot(p.x - e.x, p.y - e.y);
+      if (!e.rage && e.hp < e.maxHp * 0.5) {
+        e.rage = true;
+        FX.ring(e.x, e.y, '#ff2255', e.r + 34, 0.6);
+        FX.text(e.x, e.y - e.r - 34, 'ENRAGED!', '#ff2255', 24);
+        FX.addShake(5);
+        AudioSys.bossHorn();
+      }
+      const rage = e.rage;
+      switch (e.bphase) {
+        case 'volley': {
+          const n = rage ? 9 : 7;
+          const tt = d / 480;
+          const aim = Math.atan2(p.y + p.vy * tt * 0.35 - e.y, p.x + p.vx * tt * 0.35 - e.x);
+          for (let i = 0; i < n; i++) {
+            const a = aim + (i / (n - 1) - 0.5) * 0.9 + rand(-0.02, 0.02);
+            const b = this.bullets.obtain();
+            if (!b) break;
+            b.active = true;
+            b.x = e.x + Math.cos(a) * e.r;
+            b.y = e.y + Math.sin(a) * e.r;
+            b.vx = Math.cos(a) * 480;
+            b.vy = Math.sin(a) * 480;
+            b.life = 1.6; b.team = 'e'; b.dmg = 8;
+          }
+          FX.muzzle(e.x + Math.cos(aim) * e.r, e.y + Math.sin(aim) * e.r, aim, '#ff2255');
+          FX.addShake(2);
+          AudioSys.enemyShoot();
+          e.bphase = 'approach';
+          e.phaseT = rage ? 1.5 : 2.1;
+          throttle = 0.2;
+          break;
+        }
+        case 'dash': {
+          throttle = 1.9;
+          e.boosting = true;
+          desired = ang;
+          if (e.phaseT <= 0) {
+            e.bphase = 'approach';
+            e.phaseT = rage ? 1.5 : 2.3;
+            e.boosting = false;
+          }
+          break;
+        }
+        case 'summon': {
+          throttle = 0.1;
+          if (e.phaseT <= 0) {
+            const kinds = rage ? ['rammer', 'gunner', 'inter'] : ['rammer', 'gunner'];
+            for (let i = 0; i < kinds.length; i++) {
+              const a = ang + Math.PI + (i - (kinds.length - 1) / 2) * 0.95;
+              const px = clamp(e.x + Math.cos(a) * (e.r + 95), 100, WORLD.w - 100);
+              const py = clamp(e.y + Math.sin(a) * (e.r + 95), 100, WORLD.h - 100);
+              this.portals.push({ x: px, y: py, type: kinds[i], t: 0, dur: 0.9, big: false });
+              FX.ring(px, py, ENEMY_TYPES[kinds[i]].glow, 26, 0.4);
+            }
+            AudioSys.waveHorn();
+            e.bphase = 'approach';
+            e.phaseT = rage ? 2.1 : 2.9;
+          }
+          break;
+        }
+        case 'dash_wind': {
+          throttle = 0.06;
+          desired = ang;
+          if (e.phaseT <= 0) {
+            e.bphase = 'dash';
+            e.phaseT = rage ? 1.15 : 1.0;
+            AudioSys.rocket();
+          }
+          break;
+        }
+        case 'volley_wind': {
+          throttle = 0.12;
+          desired = ang;
+          if (e.phaseT <= 0) e.bphase = 'volley';
+          break;
+        }
+        case 'summon_wind': {
+          throttle = 0.1;
+          if (e.phaseT <= 0) e.bphase = 'summon';
+          break;
+        }
+        default: { // approach — pick the next attack
+          desired = ang + Math.sin(this.time * 1.6 + e.seed) * 0.35;
+          throttle = 0.85;
+          if (e.phaseT <= 0) {
+            const roll = Math.random();
+            if (roll < 0.45) { e.bphase = 'volley_wind'; e.phaseT = rage ? 0.5 : 0.7; }
+            else if (roll < 0.8) { e.bphase = 'dash_wind'; e.phaseT = rage ? 0.45 : 0.6; FX.ring(e.x, e.y, '#ff2255', e.r + 26, 0.5); }
+            else { e.bphase = 'summon_wind'; e.phaseT = rage ? 0.4 : 0.5; }
+          }
+        }
+      }
     }
 
     // pillar avoidance
@@ -797,6 +1012,12 @@ const Game = {
     const stats = e.boosting
       ? { accel: def.accel * 1.5, maxF: def.speed * speedScale * 1.18, turn: def.turn * 0.85, grip: 7.5 }
       : { accel: def.accel, maxF: def.speed * speedScale, turn: def.turn, grip: 9 };
+
+    if (e.ai === 'boss' && e.bphase === 'dash') {
+      stats.accel = def.accel * 2.4;
+      stats.maxF = 660 * (e.rage ? 1.1 : 1);
+      stats.turn = def.turn * 0.65;
+    }
 
     // steering: angle-error controller for smooth AI driving
     const err = angDiff(e.angle, desired);
@@ -958,7 +1179,8 @@ const Game = {
       if (pk.life <= 0) { this.pickups.splice(i, 1); continue; }
       if (p.dead) continue;
       const d2v = dist2(pk.x, pk.y, p.x, p.y);
-      if (d2v < 150 * 150) {
+      const pullR = 150 * p.mods.magnet;
+      if (d2v < pullR * pullR) {
         const d = Math.sqrt(d2v) || 1;
         const pull = 330 * dt;
         pk.x += (p.x - pk.x) / d * pull;
@@ -1013,7 +1235,7 @@ const Game = {
     this.comboTimer = 3;
     this.maxCombo = Math.max(this.maxCombo, Math.max(1, this.combo));
     const mult = Math.max(1, this.combo);
-    const gained = e.def.score * mult;
+    const gained = Math.round(e.def.score * mult * this.player.mods.scoreMult);
     this.score += gained;
     FX.text(e.x, e.y, '+' + gained + (mult > 1 ? '  x' + mult : ''), mult > 1 ? '#ffd24d' : '#9feeff', mult > 1 ? 18 : 15);
     this.dropPickup(e.x, e.y);
@@ -1024,6 +1246,7 @@ const Game = {
     if (p.dead) return;
     p.dead = true;
     p.boosting = false;
+    this.pendingUpgrades = false;
     FX.explosion(p.x, p.y, '#35f0ff', 2.2, true);
     FX.explosion(p.x + rand(-20, 20), p.y + rand(-20, 20), '#ff9a3d', 1.4, false);
     AudioSys.explosion(true);
@@ -1151,7 +1374,8 @@ const Game = {
     for (const pt of this.portals) {
       const def = ENEMY_TYPES[pt.type];
       const k = pt.t / pt.dur;
-      const rad = lerp(74, 16, k);
+      const bs = pt.big ? 2.1 : 1;
+      const rad = lerp(74 * bs, 16 * bs, k);
       ctx.globalAlpha = 0.4 + 0.5 * Math.abs(Math.sin(pt.t * 18));
       ctx.strokeStyle = def.glow;
       ctx.lineWidth = 3;
@@ -1198,6 +1422,17 @@ const Game = {
       ctx.fillStyle = '#ff5030';
       ctx.fillRect(5, -2.5, 4, 5);
       ctx.restore();
+    }
+    for (const e of this.enemies) {
+      if (e.type === 'boss' && e.bphase && e.bphase.indexOf('_wind') >= 0) {
+        ctx.globalAlpha = 0.35 + 0.3 * Math.sin(this.time * 20);
+        ctx.strokeStyle = '#ff2255';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(e.x, e.y, e.r + 16 + Math.sin(this.time * 14) * 5, 0, TAU);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
     FX.drawParticles(ctx, true);
     ctx.globalCompositeOperation = 'source-over';
@@ -1277,7 +1512,7 @@ const Game = {
     // enemies
     for (const e of this.enemies) {
       ctx.fillStyle = e.def.glow;
-      ctx.beginPath(); ctx.arc(e.x * s, e.y * s, 2.2, 0, TAU); ctx.fill();
+      ctx.beginPath(); ctx.arc(e.x * s, e.y * s, e.type === 'boss' ? 5 : 2.2, 0, TAU); ctx.fill();
     }
     // portals blink
     for (const pt of this.portals) {
@@ -1372,6 +1607,24 @@ const Game = {
         el.classList.add('pop');
       }
       document.getElementById('combo-fill').style.transform = `scaleX(${clamp(this.comboTimer / 3, 0, 1)})`;
+    }
+    // boss bar
+    const boss = this.enemies.find(e => e.type === 'boss');
+    if (c.bossAlive !== !!boss) {
+      c.bossAlive = !!boss;
+      document.getElementById('boss-bar').classList.toggle('hidden', !boss);
+    }
+    if (boss) {
+      const pct = clamp(boss.hp / boss.maxHp, 0, 1);
+      if (c.bossHp !== pct) {
+        c.bossHp = pct;
+        document.getElementById('boss-fill').style.transform = `scaleX(${pct})`;
+      }
+      const nm = 'WARLORD ' + (['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X'][Math.max(0, Math.floor(this.wave / 5) - 1)] || '');
+      if (c.bossName !== nm) {
+        c.bossName = nm;
+        document.getElementById('boss-name').textContent = nm;
+      }
     }
   }
 };
@@ -1525,6 +1778,28 @@ function killEnemy(e) {
   AudioSys.explosion(big);
   Game.hitStop = Math.max(Game.hitStop, big ? 0.055 : 0.028);
   Game.registerKill(e);
+  if (e.type === 'boss') {
+    // chained boss detonation + loot + bonus
+    FX.explosion(e.x + rand(-36, 36), e.y + rand(-36, 36), '#ffb84d', 1.6, false);
+    FX.explosion(e.x + rand(-46, 46), e.y + rand(-46, 46), '#ffffff', 1.3, false);
+    FX.ring(e.x, e.y, '#ff2255', 96, 0.7);
+    AudioSys.explosion(true);
+    FX.addShake(16);
+    Game.hitStop = Math.max(Game.hitStop, 0.09);
+    const bonus = 1000 + Game.wave * 200;
+    Game.score += bonus;
+    FX.text(e.x, e.y - 62, 'BOSS DOWN  +' + bonus, '#ffd24d', 24);
+    banner('BOSS DOWN');
+    for (let i = 0; i < 3; i++) {
+      const a = rand(TAU);
+      Game.pickups.push({
+        x: clamp(e.x + Math.cos(a) * 66, 60, WORLD.w - 60),
+        y: clamp(e.y + Math.sin(a) * 66, 60, WORLD.h - 60),
+        type: pick(['repair', 'nitro', 'coin', 'shield']),
+        t: rand(TAU), life: 14
+      });
+    }
+  }
 }
 
 let hitFlashTimer = 0;
@@ -1601,7 +1876,7 @@ function emitSkids(c, alpha) {
 /* ============================================================
    UI helpers
    ============================================================ */
-const SCREENS = ['start', 'pause', 'over'];
+const SCREENS = ['start', 'pause', 'over', 'upgrade'];
 function setScreen(name) {
   for (const s of SCREENS) {
     document.getElementById('screen-' + s).classList.toggle('visible', s === name);
@@ -1642,6 +1917,7 @@ function buildAllSprites() {
   SPRITES.gunner = makeCarSprite({ len: 46, wid: 27, body: '#e07f22', glow: '#ff9a3d', stripe: '#ffe1b3' });
   SPRITES.brute = makeCarSprite({ len: 66, wid: 40, body: '#8a3fd4', glow: '#b06cff', stripe: '#e3ccff' });
   SPRITES.inter = makeCarSprite({ len: 42, wid: 22, body: '#1dbb6a', glow: '#58ff9b', stripe: '#c9ffe2' });
+  SPRITES.boss = makeCarSprite({ len: 104, wid: 62, body: '#c22a55', glow: '#ff2255', stripe: '#ffd9e6', heavy: true });
   for (const k in PICKUP_DEFS) {
     PICKUP_DEFS[k].spr = makePickupSprite(PICKUP_DEFS[k].color, PICKUP_DEFS[k].glyph);
   }
@@ -1717,6 +1993,12 @@ function frame(now) {
     case 'over':
       if (Input.consumePressed('KeyR') || Input.consumePressed('Enter')) { Game.startRun(); break; }
       Game.update(dt * 0.5);
+      break;
+
+    case 'upgrade':
+      if (Input.consumePressed('Digit1') || Input.consumePressed('Numpad1')) Game.chooseUpgrade(0);
+      else if (Input.consumePressed('Digit2') || Input.consumePressed('Numpad2')) Game.chooseUpgrade(1);
+      else if (Input.consumePressed('Digit3') || Input.consumePressed('Numpad3')) Game.chooseUpgrade(2);
       break;
   }
 

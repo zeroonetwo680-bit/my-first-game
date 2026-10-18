@@ -206,6 +206,18 @@ const AudioSys = {
     this._tone('sawtooth', 165, 165, 0.5, 0.12, this.music);
   },
 
+  bossHorn() {
+    if (!this.ctx) return;
+    this._tone('sawtooth', 48, 96, 1.2, 0.24, this.music);
+    this._tone('sawtooth', 53, 106, 1.2, 0.2, this.music);
+    this._noise(1.1, 'bandpass', 180, 1400, 0.1, 0.8);
+    const self = this;
+    setTimeout(() => {
+      self._tone('sawtooth', 96, 48, 0.9, 0.22, self.music);
+      self._tone('sawtooth', 101, 50, 0.9, 0.18, self.music);
+    }, 1100);
+  },
+
   /* ---------------- music: minimal dark synthwave loop ---------------- */
   startMusic() {
     if (!this.ctx || this.musicOn) return;

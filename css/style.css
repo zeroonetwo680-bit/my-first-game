@@ -113,6 +113,27 @@ canvas#game {
 #wave-label { font-size: 17px; font-weight: 900; letter-spacing: 4px; color: var(--cyan); text-shadow: 0 0 12px rgba(53,240,255,0.8); }
 #enemies-label { font-size: 10px; letter-spacing: 3px; color: var(--pink); margin-top: 2px; font-weight: 700; }
 
+/* boss health bar */
+#boss-bar {
+  position: absolute; left: 50%; top: calc(52px + env(safe-area-inset-top)); transform: translateX(-50%);
+  width: min(440px, 62vw); text-align: center;
+}
+#boss-name {
+  font-family: var(--hud-font); font-size: 11px; font-weight: 700; letter-spacing: 4px;
+  color: #ff5470; text-shadow: 0 0 10px rgba(255, 60, 100, 0.8);
+}
+.bb-track {
+  margin-top: 4px; height: 12px; border: 1px solid rgba(255, 60, 100, 0.6);
+  background: rgba(20, 6, 12, 0.75); box-shadow: 0 0 12px rgba(255, 40, 80, 0.25), inset 0 0 6px rgba(0,0,0,0.7);
+  clip-path: polygon(6px 0, 100% 0, calc(100% - 6px) 100%, 0 100%);
+}
+#boss-fill {
+  display: block; height: 100%; transform-origin: left center; transform: scaleX(1);
+  background: linear-gradient(90deg, #a01030, #ff3d5e 60%, #ff7b90);
+  box-shadow: 0 0 12px rgba(255, 60, 100, 0.8);
+  transition: transform 0.15s linear;
+}
+
 .hud-right { position: absolute; right: calc(64px + env(safe-area-inset-right)); top: calc(8px + env(safe-area-inset-top)); text-align: right; }
 #score-label { font-size: 9px; letter-spacing: 3px; color: var(--dim); }
 #score-value { font-size: 26px; font-weight: 900; color: #fff; text-shadow: 0 0 14px rgba(53,240,255,0.7); line-height: 1; }
@@ -208,6 +229,32 @@ canvas#game {
 
 .hint { font-size: 13px; letter-spacing: 1.5px; color: var(--dim); line-height: 1.7; max-width: 460px; }
 .hint b { color: var(--text); font-weight: 700; }
+.hint-up { font-family: var(--hud-font); font-size: 12px; letter-spacing: 5px; color: var(--amber); margin-top: -6px; }
+
+/* upgrade cards */
+.cards { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+.card {
+  width: 152px; min-height: 178px; padding: 18px 12px 12px; cursor: pointer;
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  font-family: var(--body-font); color: var(--text);
+  background: rgba(8, 16, 32, 0.85);
+  border: 1px solid rgba(53, 240, 255, 0.4);
+  clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%);
+  transition: background 0.15s, box-shadow 0.15s, transform 0.12s;
+  touch-action: manipulation;
+}
+.card .ic { font-size: 34px; line-height: 1; filter: drop-shadow(0 0 8px rgba(53,240,255,0.45)); }
+.card .nm { font-family: var(--hud-font); font-size: 12px; font-weight: 700; letter-spacing: 1px; color: #fff; text-align: center; }
+.card .ds { font-size: 12.5px; color: var(--dim); text-align: center; line-height: 1.35; flex: 1; }
+.card .lv { font-family: var(--hud-font); font-size: 10px; letter-spacing: 2px; color: var(--amber); }
+.card .key { align-self: center; }
+.card:hover { background: rgba(53, 240, 255, 0.12); box-shadow: 0 0 22px rgba(53,240,255,0.35); transform: translateY(-4px); }
+.card:hover .ic { filter: drop-shadow(0 0 12px rgba(53,240,255,0.8)); }
+.card:active { transform: scale(0.95); }
+@media (max-width: 560px) {
+  .card { width: calc(50% - 14px); min-height: 150px; padding: 12px 8px 10px; }
+  .card .ic { font-size: 26px; }
+}
 .key { display:inline-block; min-width:20px; padding:0 5px; margin:0 2px; border:1px solid rgba(120,180,200,0.5); border-bottom-width:2px; font-weight:700; color:var(--cyan); font-size:11px; }
 
 /* stats / game over */

@@ -32,6 +32,12 @@ python3 -m http.server 8000
   boost, wall bounces, and mass-based car-to-car collisions.
 - **Four enemy types** — rammers, orbiting gunners, tank brutes, and dash
   interceptors, mixed into escalating waves with spawn telegraphs.
+- **Boss every 5 waves** — WARLORD, a massive armored car with telegraphed
+  volley spreads, charge dashes, minion summons, an enrage phase below 50% HP,
+  a dedicated boss health bar, chained detonation death, and big loot.
+- **Roguelite upgrades** — after every cleared wave, pick 1 of 3 upgrades
+  (damage, fire rate, rockets, armor, engine, grip, nitro, magnet, bounty,
+  repair). Keys 1/2/3 or tap.
 - **Juice everywhere** — screen shake, hit-stop, additive particle bursts,
   persistent skid marks and scorch decals, muzzle flashes, floating score text,
   dynamic camera (look-ahead + speed zoom), CRT scanlines, hit vignette.
