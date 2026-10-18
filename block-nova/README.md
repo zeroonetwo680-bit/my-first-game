@@ -37,6 +37,11 @@ python3 -m http.server 8000
   +15s.
 - **Hint** — the 💡 button (or `G`) sketches a valid placement for your
   biggest fitting piece, with an 8s cooldown.
+- **Missions** — 3 in-run objectives (clear lines, streaks, rocks, charged
+  pieces, score, all-clears) shown as HUD chips; each completion pays a
+  power charge +150 score with a banner.
+- **Color themes** — NEON / SUNSET / TOXIC palettes on the start screen,
+  persisted and applied to pieces, sprites and the menu backdrop.
 - **Two modes** — Classic (endless) and Rush (2:00 countdown, +2s per line,
   up to 3:00).
 - **Local top-5 tables per mode** + lifetime stats, all in localStorage.
@@ -73,6 +78,6 @@ The bundle vendors its fonts, so the APK is fully offline.
 ## Testing
 
 `node test/smoke.js` boots the real game headless (stubbed DOM + seeded RNG)
-and drives 74 deterministic checks: placement, clears, streak multipliers,
+and drives 89 deterministic checks: placement, clears, streak multipliers,
 rotation, bomb/hammer, charge earning, refill fairness, game over,
 persistence, rush timer, pause and a 60-second stress run.

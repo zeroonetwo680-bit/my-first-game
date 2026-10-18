@@ -46,6 +46,8 @@ const Game = {
   overReason: '',
   reviveUsed: false,
   hint: null, hintT: 0,
+  missions: [],
+  theme: store.get('bn.theme', 'neon'),
 
   drag: null, // { slot, px, py, gx, gy, valid, moved }
   tapT: 0, tapSlot: -1,
@@ -68,6 +70,10 @@ const Game = {
     if (b) this.best = b;
     const st = store.get('bn.stats', null);
     if (st) this.stats = st;
+    if (THEMES[this.theme]) {
+      PALETTE.length = 0;
+      PALETTE.push(...THEMES[this.theme].palette);
+    }
     this.renderScores('hs-classic', 'classic');
     this.renderScores('hs-rush', 'rush');
     this.renderLifetime();
@@ -236,25 +242,20 @@ const Game = {
   damageStone(idx, heavy) {
     const gx = idx % GRID, gy = (idx / GRID) | 0;
     const cx = this.cellCX(gx), cy = this.cellCY(gy);
-    if (heavy && this.stones[idx]) {
+    if (!this.stones[idx]) return;
+    const wasCracked = this.stones[idx] === 2;
+    if (heavy || wasCracked) {
+      // shatter
       this.stones[idx] = 0;
       this.score += 50;
-      FX.sparks(cx, cy, '#ffb84d', 10, 340);
+      this.missionEvent('rocks');
+      FX.sparks(cx, cy, '#ffb84d', heavy ? 10 : 8, heavy ? 340 : 300);
       FX.ring(cx, cy, '#ffb84d', L.cell, 0.35);
-      FX.text(cx, cy - L.cell * 0.5, '+50', '#ffb84d', 17);
-      AudioSys.hammer();
-      Platform2.vibrate(14);
-      return;
-    }
-    if (this.stones[idx] === 2) {
-      this.stones[idx] = 0;
-      this.score += 50;
-      FX.sparks(cx, cy, '#ffb84d', 8, 300);
-      FX.ring(cx, cy, '#ffb84d', L.cell, 0.3);
       FX.text(cx, cy - L.cell * 0.5, '+50', '#ffb84d', 16);
       AudioSys.hammer();
       Platform2.vibrate(12);
-    } else if (this.stones[idx] === 1) {
+    } else {
+      // crack
       this.stones[idx] = 2;
       FX.sparks(cx, cy, '#9fb4d8', 5, 200);
       FX.text(cx, cy - L.cell * 0.5, 'CRACKED', '#9fb4d8', 13);
@@ -277,6 +278,7 @@ const Game = {
     this.renderScores('hs-classic', 'classic');
     this.renderScores('hs-rush', 'rush');
     this.renderLifetime();
+    this.renderThemeBtns();
   },
 
   startRun(mode) {
@@ -298,6 +300,7 @@ const Game = {
     this.reviveUsed = false;
     this.hint = null;
     this.hintT = 0;
+    this.pickMissions();
     this.clearAnims.length = 0;
     this.popAnims.length = 0;
     this.drag = null;
@@ -332,7 +335,7 @@ const Game = {
   /* ---------------- tray ---------------- */
   newPiece() {
     const s = pickShape(this.tier());
-    return { cells: s.cells.map(p => p.slice()), w: s.w, h: s.h, color: s.color, k: s.k, used: false, spawnT: 0 };
+    return { cells: s.cells.map(p => p.slice()), w: s.w, h: s.h, color: PALETTE[s.k], k: s.k, used: false, spawnT: 0, bombCell: null };
   },
 
   rollBombCells() {
@@ -406,6 +409,7 @@ const Game = {
     AudioSys.place();
     Platform2.vibrate(8);
     this.hint = null;
+    this.missionEvent('pieces');
 
     if (p.bombCell) this.detonateCell(gx + p.bombCell[0], gy + p.bombCell[1]);
 
@@ -478,6 +482,8 @@ const Game = {
     this.streak++;
     this.maxStreak = Math.max(this.maxStreak, this.streak);
     this.lines += nLines;
+    this.missionEvent('lines', nLines);
+    this.missionEvent('streak', this.streak);
     this.stats.lines++;
     const mult = 1 + 0.5 * (this.streak - 1);
     const base = clearedCount * 10 + nLines * 100;
@@ -504,6 +510,7 @@ const Game = {
     if (this.isBoardEmpty()) {
       this.addScore(500, null);
       this.stats.allclears++;
+      this.missionEvent('allclear');
       this.grantCharge('bomb', true);
       FX.confetti(cx, cy, '#ffb84d', 26);
       FX.confetti(cx, cy, '#35f0ff', 26);
@@ -521,6 +528,7 @@ const Game = {
 
   addScore(n, _) {
     this.score += n;
+    this.missionEvent('score');
     // charge earning progress
     for (const key of ['rotate', 'bomb', 'hammer']) {
       if (this.charges[key] >= this.CAPS[key]) continue;
@@ -590,6 +598,7 @@ const Game = {
     if (n) {
       this.addScore(n * 10, null);
       FX.text(px, py - L.cell, 'BOOM +' + (n * 10), '#ff9a3d', 17);
+      this.missionEvent('booms');
     }
     return n * 10;
   },
@@ -651,6 +660,69 @@ const Game = {
     this.addScore(25, null);
     FX.text(cx, cy - L.cell * 0.6, '+25', '#9feeff', 15);
     return true;
+  },
+
+  /* ---------------- themes ---------------- */
+  setTheme(t) {
+    if (!THEMES[t] || this.theme === t) return;
+    this.theme = t;
+    store.set('bn.theme', t);
+    PALETTE.length = 0;
+    PALETTE.push(...THEMES[t].palette);
+    this.buildSprites();
+    this._menuBlocks = null; // re-tint the menu drift blocks
+    this.renderThemeBtns();
+    AudioSys.ui();
+  },
+
+  renderThemeBtns() {
+    for (const b of document.querySelectorAll('.theme-btn')) {
+      b.classList.toggle('active', b.dataset.theme === this.theme);
+    }
+  },
+
+  /* ---------------- missions ---------------- */
+  pickMissions() {
+    const pool = MISSION_DEFS.slice();
+    for (let i = pool.length - 1; i > 0; i--) {
+      const j = (Math.random() * (i + 1)) | 0;
+      [pool[i], pool[j]] = [pool[j], pool[i]];
+    }
+    this.missions = pool.slice(0, 3).map(d => ({ ...d, prog: 0, done: false }));
+  },
+
+  missionEvent(key, n) {
+    n = n || 1;
+    let changed = false;
+    for (const m of this.missions) {
+      if (m.done || m.key !== key) continue;
+      if (key === 'score') m.prog = this.score;
+      else if (key === 'streak') m.prog = Math.max(m.prog, n);
+      else m.prog += n;
+      if (m.prog >= m.target) {
+        m.done = true;
+        this.grantMissionReward(m);
+      }
+      changed = true;
+    }
+    if (changed) this.hudCache.mi = null;
+  },
+
+  grantMissionReward(m) {
+    const rk = m.reward.key;
+    let rewardTxt;
+    if (this.charges[rk] < this.CAPS[rk]) {
+      this.charges[rk]++;
+      rewardTxt = '+1 ' + rk.toUpperCase();
+    } else {
+      this.score += 200;
+      rewardTxt = '+200';
+    }
+    this.addScore(150, null);
+    FX.text(vw / 2, L.trayY - 64, 'MISSION! ' + rewardTxt + ' +150', '#58ff9b', 18);
+    this.banner('MISSION COMPLETE');
+    AudioSys.powerGain();
+    Platform2.vibrate(20);
   },
 
   /* ---------------- hint ---------------- */
@@ -1253,6 +1325,26 @@ const Game = {
       document.getElementById('cd-hint').style.transform = `scaleX(${hf})`;
     }
 
+    // mission chips
+    if (c.mi !== true) {
+      c.mi = true;
+      document.getElementById('mission-bar').classList.remove('hidden');
+    }
+    for (let i = 0; i < 3; i++) {
+      const m = this.missions[i];
+      if (!m) continue;
+      const fmt = (v) => (m.target >= 1000 ? (v / 1000).toFixed(1) + 'k' : v);
+      const txt = m.icon + ' ' + fmt(Math.min(m.prog, m.target)) + '/' + fmt(m.target);
+      if (c['m' + i] !== txt) {
+        c['m' + i] = txt;
+        document.getElementById('mchip-' + i).textContent = txt;
+      }
+      if (c['md' + i] !== m.done) {
+        c['md' + i] = m.done;
+        document.getElementById('mchip-' + i).classList.toggle('done', m.done);
+      }
+    }
+
     // rush timer
     if (this.mode === 'rush') {
       const frac = clamp(this.timeLeft / 120, 0, 1);
@@ -1265,6 +1357,17 @@ const Game = {
     }
   }
 };
+
+/* ---------- in-run missions: 3 objectives with instant rewards ---------- */
+const MISSION_DEFS = [
+  { id: 'lines4',  icon: '\uD83E\uDD46', text: 'Clear 4 lines',            target: 4,    key: 'lines',  reward: { key: 'rotate' } },
+  { id: 'streak3', icon: '\u26A1',        text: 'Reach a x3 streak',        target: 3,    key: 'streak', reward: { key: 'bomb' } },
+  { id: 'rocks1',  icon: '\uD83E\uDEA8', text: 'Shatter a rock',           target: 1,    key: 'rocks',  reward: { key: 'hammer' } },
+  { id: 'boom1',   icon: '\uD83D\uDCA3', text: 'Land a charged piece',     target: 1,    key: 'booms',  reward: { key: 'rotate' } },
+  { id: 'score6k', icon: '\uD83D\uDC8E', text: 'Score 6,000 points',       target: 6000, key: 'score',  reward: { key: 'bomb' } },
+  { id: 'pieces12',icon: '\uD83E\uDE9E', text: 'Place 12 pieces',          target: 12,   key: 'pieces', reward: { key: 'hammer' } },
+  { id: 'ac1',     icon: '\u2728',        text: 'Trigger an All Clear',     target: 1,    key: 'allclear', reward: { key: 'bomb' } }
+];
 
 /* lightweight platform niceties shared with the main game */
 const Platform2 = {
@@ -1302,6 +1405,9 @@ function wireUI() {
     document.getElementById('bn-mute').classList.toggle('off', AudioSys.muted);
   });
   on('bn-hint', () => Game.requestHint());
+  for (const b of document.querySelectorAll('.theme-btn')) {
+    b.addEventListener('click', (e) => { e.preventDefault(); Game.setTheme(b.dataset.theme); });
+  }
   on('bn-revive', () => { AudioSys.ui(); Game.revive(); });
   on('pw-rotate', () => Game.rotateTray(Game.lastSlot));
   on('pw-bomb', () => Game.armPower('bomb'));

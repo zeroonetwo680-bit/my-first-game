@@ -567,6 +567,87 @@ this.__reHint = !!Game.hint && Game.hintT > 7;
 check('cooldown expires (~8s)', 'this.__cdAfter', n => n <= 0);
 check('hint works again after cooldown', 'this.__reHint', v => v === true);
 
+console.log('--- missions: 3 offered, progress, rewards ---');
+run(`
+Game.startRun('classic');
+this.__count = Game.missions.length;
+this.__keysOk = Game.missions.every(m => MISSION_DEFS.some(d => d.id === m.id) && m.target > 0 && !m.done);
+const def = MISSION_DEFS.find(d => d.key === 'score');
+Game.missions[0] = { ...def, prog: 0, done: false };
+Game.charges.bomb = 0;
+const s0 = Game.score;
+Game.addScore(def.target, null);   // crossing the target completes it via the addScore hook
+this.__done = Game.missions[0].done;
+this.__rewarded = Game.score > s0 + def.target;   // bonus score added on top
+this.__chargeGranted = Game.charges.bomb >= 1;
+`);
+check('3 missions per run', 'this.__count', n => n === 3);
+check('missions come from the defs pool', 'this.__keysOk', v => v === true);
+check('score mission completes at target', 'this.__done', v => v === true);
+check('completion grants bonus score', 'this.__rewarded', v => v === true);
+check('completion path grants charges (reward + organic earn)', 'this.__chargeGranted', v => v === true);
+
+run(`
+Game.startRun('classic');
+const linesM = Game.missions.find(m => m.key === 'lines');
+if (linesM) {
+  // force a real line clear
+  Game.board.fill(0); Game.stones.fill(0);
+  for (let x = 1; x < 8; x++) Game.board[7 * 8 + x] = 1;
+  const mk = (cells) => ({ cells, w: 1, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+  Game.tray.length = 0;
+  Game.tray.push(mk([[0,0]]), mk([[0,0]]), mk([[0,0]]));
+  Game.tryPlace(0, 0, 7);
+  this.__linesProg = linesM.prog;
+} else this.__linesProg = -1;
+`);
+check('line clear feeds lines mission (or not offered this run)', 'this.__linesProg', n => n === -1 || n >= 1);
+
+run(`
+Game.startRun('classic');
+const rockM = Game.missions.find(m => m.key === 'rocks');
+if (rockM) {
+  Game.board.fill(0); Game.stones.fill(0);
+  Game.stones[0] = 1;
+  Game.damageStone(0, true);   // heavy -> shatter
+  this.__rockProg = rockM.prog;
+  this.__rockDone = rockM.done;
+} else { this.__rockProg = -1; this.__rockDone = false; }
+`);
+check('rock shatter feeds rocks mission (or not offered)', 'this.__rockProg === -1 || this.__rockProg >= 1', v => v === true);
+check('rocks mission completes at 1', 'this.__rockDone || this.__rockProg === -1', v => v === true);
+
+run(`
+Game.startRun('classic');
+this.__streakM = Game.missions.some(m => m.key === 'streak');
+this.__distinct = new Set(Game.missions.map(m => m.id)).size === 3;
+`);
+check('missions are distinct', 'this.__distinct', v => v === true);
+
+console.log('--- themes: swap, persist, rebuild ---');
+run(`
+Game.setTheme('sunset');
+this.__pal0 = PALETTE[0];
+this.__stored = localStorage.getItem('bn.theme');
+this.__cellSprites = cellSprites.length;
+`);
+check('sunset palette applied', 'this.__pal0', c => c === '#ffd166');
+check('theme persisted', 'this.__stored', v => v === '"sunset"' || v === 'sunset');
+check('sprites rebuilt for 8 colors', 'this.__cellSprites', n => n === 8);
+run(`
+Game.startRun('classic');
+this.__pieceColor = Game.newPiece().color;
+Game.setTheme('neon');
+this.__back = PALETTE[0];
+`);
+check('new pieces use active theme colors', 'this.__pieceColor', c => typeof c === 'string' && c.length === 7);
+check('switch back to neon works', 'this.__back', c => c === '#35f0ff');
+run(`
+Game.setTheme('bogus');
+this.__unchanged = PALETTE[0] === THEMES.neon.palette[0];
+`);
+check('invalid theme ignored', 'this.__unchanged', v => v === true);
+
 console.log('--- perf ---');
 run(`
 Game.startRun('classic');

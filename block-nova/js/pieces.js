@@ -3,16 +3,13 @@
    ============================================================ */
 'use strict';
 
-const PALETTE = [
-  '#35f0ff', // 0 cyan
-  '#ff3d81', // 1 pink
-  '#ffb84d', // 2 amber
-  '#58ff9b', // 3 green
-  '#b06cff', // 4 violet
-  '#ff7b3d', // 5 orange
-  '#5a8cff', // 6 blue
-  '#ff5470'  // 7 red
-];
+/* color themes — PALETTE is reassigned at runtime by Game.setTheme */
+const THEMES = {
+  neon:   { label: 'NEON',   palette: ['#35f0ff', '#ff3d81', '#ffb84d', '#58ff9b', '#b06cff', '#ff7b3d', '#5a8cff', '#ff5470'] },
+  sunset: { label: 'SUNSET', palette: ['#ffd166', '#ff9a3d', '#ff5e5b', '#ff3d81', '#d84ddb', '#8a5cff', '#ff8fab', '#ffe3a3'] },
+  toxic:  { label: 'TOXIC',  palette: ['#d0ff4d', '#8aff5e', '#35f0ff', '#00e5a0', '#58ff9b', '#5a8cff', '#a4f9c9', '#e0ffb3'] }
+};
+let PALETTE = THEMES.neon.palette.slice();
 
 /* raw shape families — rotations are generated below.
    c: cells [x,y], k: palette index, w: spawn weight.
@@ -54,8 +51,7 @@ const SHAPES = [];
       cells: raw.c.map(p => p.slice()),
       w: maxX + 1,
       h: maxY + 1,
-      color: PALETTE[raw.k],
-      k: raw.k,
+      k: raw.k,          // color resolved at piece creation (theme-aware)
       weight: raw.w,
       big: raw.c.length >= 4
     });
