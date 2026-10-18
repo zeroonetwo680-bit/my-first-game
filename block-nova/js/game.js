@@ -44,6 +44,8 @@ const Game = {
   lockT: 0,
   dying: 0,
   overReason: '',
+  reviveUsed: false,
+  hint: null, hintT: 0,
 
   drag: null, // { slot, px, py, gx, gy, valid, moved }
   tapT: 0, tapSlot: -1,
@@ -293,6 +295,9 @@ const Game = {
     this.timeLeft = 120;
     this.lockT = 0;
     this.dying = 0;
+    this.reviveUsed = false;
+    this.hint = null;
+    this.hintT = 0;
     this.clearAnims.length = 0;
     this.popAnims.length = 0;
     this.drag = null;
@@ -330,6 +335,16 @@ const Game = {
     return { cells: s.cells.map(p => p.slice()), w: s.w, h: s.h, color: s.color, k: s.k, used: false, spawnT: 0 };
   },
 
+  rollBombCells() {
+    const tier = this.tier();
+    for (const q of this.tray) {
+      q.bombCell = null;
+      if (tier >= 2 && Math.random() < 0.05 + tier * 0.025) {
+        q.bombCell = q.cells[(Math.random() * q.cells.length) | 0].slice();
+      }
+    }
+  },
+
   refillTray() {
     // fairness: reroll the set a few times so at least one piece fits
     for (let attempt = 0; attempt < 14; attempt++) {
@@ -338,6 +353,7 @@ const Game = {
         this.tray.length = 0;
         this.tray.push(...set);
         this.maybeSpawnStones();
+        this.rollBombCells();
         return;
       }
     }
@@ -347,6 +363,7 @@ const Game = {
     this.tray.length = 0;
     this.tray.push(single, this.newPiece(), this.newPiece());
     this.maybeSpawnStones();
+    this.rollBombCells();
   },
 
   /* ---------------- board logic ---------------- */
@@ -388,6 +405,9 @@ const Game = {
     this.lastSlot = slot;
     AudioSys.place();
     Platform2.vibrate(8);
+    this.hint = null;
+
+    if (p.bombCell) this.detonateCell(gx + p.bombCell[0], gy + p.bombCell[1]);
 
     const cleared = this.resolveClears(gx + p.w / 2, gy + p.h / 2);
 
@@ -542,6 +562,38 @@ const Game = {
     AudioSys.ui();
   },
 
+  /** 3x3 detonation used by charged pieces; returns score awarded */
+  detonateCell(cx, cy) {
+    let n = 0;
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const x = cx + dx, y = cy + dy;
+        if (x < 0 || y < 0 || x >= GRID || y >= GRID) continue;
+        const idx = y * GRID + x;
+        if (this.board[idx]) {
+          this.clearAnims.push({ x: this.cellCX(x), y: this.cellCY(y), color: PALETTE[this.board[idx] - 1], t: 0, delay: rand(0, 0.04) });
+          this.board[idx] = 0;
+          n++;
+        } else if (this.stones[idx]) {
+          this.damageStone(idx, true);
+          n++;
+        }
+      }
+    }
+    const px = this.cellCX(cx), py = this.cellCY(cy);
+    FX.glowBurst(px, py, '#ff7b3d', 14, 360);
+    FX.sparks(px, py, '#ffd24d', 10, 400);
+    FX.ring(px, py, '#ff7b3d', L.cell * 2.2, 0.35);
+    FX.addShake(6);
+    AudioSys.bomb();
+    Platform2.vibrate(40);
+    if (n) {
+      this.addScore(n * 10, null);
+      FX.text(px, py - L.cell, 'BOOM +' + (n * 10), '#ff9a3d', 17);
+    }
+    return n * 10;
+  },
+
   useBomb(gx, gy) {
     if (this.state !== 'playing' || this.charges.bomb <= 0) return false;
     let n = 0;
@@ -601,6 +653,28 @@ const Game = {
     return true;
   },
 
+  /* ---------------- hint ---------------- */
+  requestHint() {
+    if (this.state !== 'playing') return;
+    if (this.hintT > 0) { AudioSys.invalid(); return; }
+    const order = [0, 1, 2].filter(i => this.tray[i] && !this.tray[i].used)
+      .sort((a, b) => this.tray[b].cells.length - this.tray[a].cells.length);
+    for (const i of order) {
+      const p = this.tray[i];
+      for (let gy = 0; gy <= GRID - p.h; gy++) {
+        for (let gx = 0; gx <= GRID - p.w; gx++) {
+          if (this.canPlace(p, gx, gy)) {
+            this.hint = { slot: i, gx, gy, t: 0 };
+            this.hintT = 8;
+            AudioSys.ui();
+            return;
+          }
+        }
+      }
+    }
+    AudioSys.invalid();
+  },
+
   /* ---------------- death / over ---------------- */
   beginDeath(reason) {
     if (this.state !== 'playing') return;
@@ -609,6 +683,9 @@ const Game = {
     this.dying = 1.0;
     this.drag = null;
     this.armed = null;
+    this.hint = null;
+    this._preBoard = this.board.slice();
+    this._preStones = this.stones.slice();
     this.banner(reason);
     AudioSys.gameOver();
     Platform2.vibrate([60, 40, 60]);
@@ -644,6 +721,7 @@ const Game = {
 
     document.getElementById('over-title').textContent = this.overReason || 'GAME OVER';
     document.getElementById('bn-new-best').classList.toggle('hidden', !isNewBest || this.score === 0);
+    document.getElementById('bn-revive').classList.toggle('hidden', this.reviveUsed || this.score <= 0);
     document.getElementById('ov-score').textContent = fmtNum(this.score);
     document.getElementById('ov-lines').textContent = this.lines;
     document.getElementById('ov-streak').textContent = 'x' + Math.max(1, this.maxStreak);
@@ -653,6 +731,36 @@ const Game = {
     document.getElementById('hud').classList.add('hidden');
     this.setScreen('bn-over');
     if (isNewBest && this.score > 0) setTimeout(() => AudioSys.newBest(), 350);
+  },
+
+  revive() {
+    if (this.state !== 'over' || this.reviveUsed || this.score <= 0) return;
+    this.reviveUsed = true;
+    const pre = this._preBoard || new Uint8Array(this.board.length);
+    const preStones = this._preStones || new Uint8Array(this.stones.length);
+    this.board.set(pre);
+    this.stones.set(preStones);
+    // wipe the bottom 4 rows of blocks (stones stay)
+    for (let gy = GRID - 4; gy < GRID; gy++) {
+      for (let gx = 0; gx < GRID; gx++) this.board[gy * GRID + gx] = 0;
+    }
+    // re-materialize remaining cells
+    for (let i = 0; i < this.board.length; i++) {
+      if (this.board[i]) this.popAnims.push({ gx: i % GRID, gy: (i / GRID) | 0, t: 0 });
+    }
+    this.tray.length = 0;
+    this.refillTray();
+    this.streak = 0;
+    if (this.mode === 'rush') this.timeLeft = Math.min(180, this.timeLeft + 15);
+    this.state = 'playing';
+    this.setScreen(null);
+    document.getElementById('hud').classList.remove('hidden');
+    this.banner('\u26A1 SECOND CHANCE!');
+    FX.ring(vw / 2, L.boardY + GRID * L.cell / 2, '#ffb84d', L.cell * 3, 0.6);
+    FX.addShake(6);
+    AudioSys.allClear();
+    Platform2.vibrate([30, 40, 30]);
+    this.updateHUD(true);
   },
 
   /* ---------------- persistence UI ---------------- */
@@ -693,6 +801,11 @@ const Game = {
     this.runTime += dt;
 
     if (this.lockT > 0) this.lockT -= dt;
+    if (this.hintT > 0) this.hintT -= dt;
+    if (this.hint) {
+      this.hint.t += dt;
+      if (this.hint.t > 2.5) this.hint = null;
+    }
 
     // dying sequence
     if (this.state === 'dying') {
@@ -842,6 +955,23 @@ const Game = {
       ctx.globalAlpha = 1;
     }
 
+    // hint ghost
+    if (this.hint && this.state === 'playing') {
+      const hp = this.tray[this.hint.slot];
+      if (hp && !hp.used) {
+        const pulse = 0.35 + 0.3 * Math.sin(this.time * 7);
+        ctx.globalAlpha = pulse + 0.25;
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 2.5;
+        for (const [cx2, cy2] of hp.cells) {
+          const x = boardX + (this.hint.gx + cx2) * cell, y = boardY + (this.hint.gy + cy2) * cell;
+          this.roundRect(ctx, x + 3, y + 3, cell - 6, cell - 6, cell * 0.16);
+          ctx.stroke();
+        }
+        ctx.globalAlpha = 1;
+      }
+    }
+
     // drag ghost preview
     if (this.drag && this.drag.gx !== null && this.state === 'playing') {
       const p = this.tray[this.drag.slot];
@@ -907,6 +1037,18 @@ const Game = {
         const x = ox + px * tc, y = oy + py * tc;
         const spr = cellSprites[p.k];
         if (spr) ctx.drawImage(spr, x, y, tc, tc);
+        if (p.bombCell && p.bombCell[0] === px && p.bombCell[1] === py) {
+          const pulse = 0.5 + 0.5 * Math.sin(this.time * 6);
+          ctx.globalAlpha = alpha * (0.35 + 0.55 * pulse);
+          ctx.fillStyle = '#ffffff';
+          this.roundRect(ctx, x + tc * 0.2, y + tc * 0.2, tc * 0.6, tc * 0.6, tc * 0.16);
+          ctx.fill();
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = '#ff7b3d';
+          this.roundRect(ctx, x + tc * 0.32, y + tc * 0.32, tc * 0.36, tc * 0.36, tc * 0.1);
+          ctx.fill();
+          ctx.globalAlpha = alpha * (p.spawnT < 1 ? p.spawnT : 1);
+        }
       }
       ctx.globalAlpha = 1;
     }
@@ -923,6 +1065,14 @@ const Game = {
       const x = ox + px * cell, y = oy + py * cell;
       const spr = cellSprites[p.k];
       if (spr) ctx.drawImage(spr, x, y, cell, cell);
+      if (p.bombCell && p.bombCell[0] === px && p.bombCell[1] === py) {
+        ctx.fillStyle = '#ff7b3d';
+        this.roundRect(ctx, x + cell * 0.3, y + cell * 0.3, cell * 0.4, cell * 0.4, cell * 0.1);
+        ctx.fill();
+        ctx.fillStyle = '#fff';
+        this.roundRect(ctx, x + cell * 0.38, y + cell * 0.38, cell * 0.24, cell * 0.24, cell * 0.07);
+        ctx.fill();
+      }
     }
     ctx.globalAlpha = 1;
   },
@@ -1091,6 +1241,18 @@ const Game = {
       }
     }
 
+    // hint cooldown
+    const hot = this.hintT > 0;
+    if (c.hintHot !== hot) {
+      c.hintHot = hot;
+      document.getElementById('bn-hint').classList.toggle('empty', hot);
+    }
+    const hf = clamp(this.hintT / 8, 0, 1);
+    if (c.hintFrac !== hf.toFixed(2)) {
+      c.hintFrac = hf.toFixed(2);
+      document.getElementById('cd-hint').style.transform = `scaleX(${hf})`;
+    }
+
     // rush timer
     if (this.mode === 'rush') {
       const frac = clamp(this.timeLeft / 120, 0, 1);
@@ -1139,6 +1301,8 @@ function wireUI() {
     AudioSys.setMuted(!AudioSys.muted);
     document.getElementById('bn-mute').classList.toggle('off', AudioSys.muted);
   });
+  on('bn-hint', () => Game.requestHint());
+  on('bn-revive', () => { AudioSys.ui(); Game.revive(); });
   on('pw-rotate', () => Game.rotateTray(Game.lastSlot));
   on('pw-bomb', () => Game.armPower('bomb'));
   on('pw-hammer', () => Game.armPower('hammer'));
@@ -1159,7 +1323,8 @@ function wireUI() {
     } else if (e.code === 'KeyR') {
       if (Game.state === 'over') Game.startRun(Game.mode);
       else if (Game.state === 'playing') Game.rotateTray(Game.lastSlot);
-    } else if (e.code === 'KeyB') Game.armPower('bomb');
+    } else if (e.code === 'KeyG') Game.requestHint();
+    else if (e.code === 'KeyB') Game.armPower('bomb');
     else if (e.code === 'KeyH') Game.armPower('hammer');
     else if (e.code === 'KeyM') {
       AudioSys.init();

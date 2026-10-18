@@ -449,6 +449,124 @@ this.__emptyWithStone = Game.isBoardEmpty();
 `);
 check('isBoardEmpty false with a stone', 'this.__emptyNoStones && !this.__emptyWithStone', v => v === true);
 
+console.log('--- charged pieces: 3x3 detonation on placement ---');
+run(`
+Game.startRun('classic');
+Game.board.fill(0); Game.stones.fill(0);
+const mk = (cells) => ({ cells, w: 2, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+const piece = mk([[0,0],[1,0]]);
+piece.bombCell = [1, 0];   // charged cell at local (1,0) -> grid (4,0) when placed at (3,0)
+Game.tray.length = 0;
+Game.tray.push(piece, mk([[0,0]]), mk([[0,0]]));
+Game.board[5] = 3;         // cell (5,0) inside blast radius
+Game.board[6] = 3;         // cell (6,0) outside radius (blast covers x 3..5)
+const s0 = Game.score;
+this.__placed = Game.tryPlace(0, 3, 0);
+this.__insideGone = !Game.board[5];
+this.__outsideStays = Game.board[6] === 3;
+this.__stamped = !Game.board[3] && !Game.board[4];  // piece cells detonated away too (they were inside the radius)
+this.__boomScore = Game.score - s0;
+`);
+check('charged piece placed', 'this.__placed', v => v === true);
+check('blast cleared cell inside radius', 'this.__insideGone', v => v === true);
+check('cell outside radius untouched', 'this.__outsideStays', v => v === true);
+check('boom scored bonus points', 'this.__boomScore', n => n > 0);
+
+run(`
+Game.board.fill(0); Game.stones.fill(0);
+const mk2 = (cells) => ({ cells, w: 1, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+const p2 = mk2([[0,0]]);
+p2.bombCell = [0, 0];
+Game.tray.length = 0;
+Game.tray.push(p2, mk2([[0,0]]), mk2([[0,0]]));
+Game.stones[4 * 8 + 5] = 1;   // intact stone beside blast center (4,4)
+this.__placed2 = Game.tryPlace(0, 4, 4);
+this.__stoneShattered = Game.stones[4 * 8 + 5] === 0;
+`);
+check('charged cell shatters a stone outright', 'this.__placed2 && this.__stoneShattered', v => v === true);
+
+console.log('--- second chance: revive once per run ---');
+run(`
+Game.startRun('classic');
+Game.board.fill(1);   // board[0] (top row) must survive the revive cut
+Game.tray.length = 0;
+const mk3 = (cells) => ({ cells, w: 2, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+Game.tray.push(mk3([[0,0],[1,0]]), mk3([[0,0]]), mk3([[0,0]]));
+Game.score = 900;
+Game.beginDeath('NO MOVES LEFT');
+let t = 90000;
+for (let i = 0; i < 90 && Game.state !== 'over'; i++) { t += 16.6; __frame(t); }
+this.__overNow = Game.state;
+this.__reviveShown = !document.getElementById('bn-revive').classList.contains('hidden');
+Game.revive();
+this.__playingAgain = Game.state;
+this.__topCellSurvived = Game.board[0] === 1;
+this.__bottomCleared = [...Array(8).keys()].every(x => !Game.board[(8-4) * 8 + x + 0] || (8-4)*8+x >= 32 && Game.board[(8-4)*8+x] === 0);
+this.__usedFlag = Game.reviveUsed;
+`);
+check('game over reached before revive', 'this.__overNow', v => v === 'over');
+check('second-chance button offered', 'this.__reviveShown', v => v === true);
+check('revive returns to playing', 'this.__playingAgain', v => v === 'playing');
+check('cells above the cut survive', 'this.__topCellSurvived', v => v === true);
+check('bottom rows wiped for room', 'this.__bottomCleared', v => v === true);
+check('revive flagged as used', 'this.__usedFlag', v => v === true);
+run(`
+// die again -> no second button this time
+Game.board.fill(1);
+Game.tray.length = 0;
+const mk4 = (cells) => ({ cells, w: 3, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+Game.tray.push(mk4([[0,0],[1,0],[2,0]]), mk4([[0,0]]), mk4([[0,0]]));
+// ensure nothing fits: fill everything (a single would fit at board[0] hole? board is full except none)
+Game.beginDeath('NO MOVES LEFT');
+let t = 95000;
+for (let i = 0; i < 90 && Game.state !== 'over'; i++) { t += 16.6; __frame(t); }
+this.__reviveGone = document.getElementById('bn-revive').classList.contains('hidden');
+`);
+check('no second revive on next game over', 'this.__reviveGone', v => v === true);
+
+run(`
+// rush revive grants +15s
+Game.startRun('rush');
+Game.timeLeft = 4;
+Game.board.fill(1);
+Game.tray.length = 0;
+const mk5 = (cells) => ({ cells, w: 3, h: 1, color: '#fff', k: 0, used: false, spawnT: 1, bombCell: null });
+Game.tray.push(mk5([[0,0],[1,0],[2,0]]), mk5([[0,0]]), mk5([[0,0]]));
+Game.score = 500;
+Game.beginDeath('TIME UP');
+let t = 98000;
+for (let i = 0; i < 90 && Game.state !== 'over'; i++) { t += 16.6; __frame(t); }
+Game.revive();
+this.__rushTime = Game.timeLeft;
+`);
+check('rush revive adds time (+15s)', 'this.__rushTime', n => n >= 15);
+
+console.log('--- hint: suggests a valid placement with cooldown ---');
+run(`
+Game.startRun('classic');
+Game.board.fill(0); Game.stones.fill(0);
+Game.requestHint();
+this.__hintSet = !!Game.hint;
+this.__valid = Game.hint ? Game.canPlace(Game.tray[Game.hint.slot], Game.hint.gx, Game.hint.gy) : false;
+this.__cd = Game.hintT;
+const firstHint = Game.hint;
+Game.requestHint();
+this.__sameAfterCd = Game.hint === firstHint;
+`);
+check('hint produced', 'this.__hintSet', v => v === true);
+check('hint placement is valid', 'this.__valid', v => v === true);
+check('hint starts cooldown', 'this.__cd', n => n > 7);
+check('hint locked during cooldown', 'this.__sameAfterCd', v => v === true);
+run(`
+let t = 150000;
+for (let i = 0; i < 600; i++) { t += 16.6; __frame(t); }
+this.__cdAfter = Game.hintT;
+Game.requestHint();
+this.__reHint = !!Game.hint && Game.hintT > 7;
+`);
+check('cooldown expires (~8s)', 'this.__cdAfter', n => n <= 0);
+check('hint works again after cooldown', 'this.__reHint', v => v === true);
+
 console.log('--- perf ---');
 run(`
 Game.startRun('classic');

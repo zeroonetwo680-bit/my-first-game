@@ -156,6 +156,12 @@ canvas#game { position: absolute; inset: 0; width: 100%; height: 100%; display: 
 .btn.primary { color: #061018; background: var(--cyan); border-color: var(--cyan); box-shadow: 0 0 26px rgba(53,240,255,0.55); }
 .btn.primary:hover { background: #7ff7ff; }
 .btn.big { font-size: 17px; padding: 15px 40px; }
+.revive-btn {
+  color: #1a1206; background: var(--amber); border-color: var(--amber);
+  box-shadow: 0 0 26px rgba(255, 184, 77, 0.55);
+  font-size: 13px; padding: 12px 22px;
+}
+.revive-btn:hover { background: #ffd27a; box-shadow: 0 0 34px rgba(255, 184, 77, 0.8); }
 .rush-btn { color: var(--pink); border-color: rgba(255, 61, 129, 0.65); }
 .rush-btn:hover { background: rgba(255, 61, 129, 0.14); box-shadow: 0 0 18px rgba(255,61,129,0.4); }
 

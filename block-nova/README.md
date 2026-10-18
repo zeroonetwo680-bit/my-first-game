@@ -30,6 +30,13 @@ python3 -m http.server 8000
 - **Rock cells** — dark stones occupy cells, block placement and count as
   filled for line completion. A line blast cracks them; a second hit (or a
   bomb/hammer) shatters them for +50. Max 4 on the board.
+- **Charged pieces** — from LV3, tray pieces can carry a pulsing orange bomb
+  cell that detonates a 3×3 blast the moment the piece lands (rocks included).
+- **Second Chance** — when a run ends, revive once per run: the bottom four
+  rows are wiped, the tray rerolls, and you keep your score. Rush revives add
+  +15s.
+- **Hint** — the 💡 button (or `G`) sketches a valid placement for your
+  biggest fitting piece, with an 8s cooldown.
 - **Two modes** — Classic (endless) and Rush (2:00 countdown, +2s per line,
   up to 3:00).
 - **Local top-5 tables per mode** + lifetime stats, all in localStorage.
@@ -66,6 +73,6 @@ The bundle vendors its fonts, so the APK is fully offline.
 ## Testing
 
 `node test/smoke.js` boots the real game headless (stubbed DOM + seeded RNG)
-and drives 36 deterministic checks: placement, clears, streak multipliers,
+and drives 74 deterministic checks: placement, clears, streak multipliers,
 rotation, bomb/hammer, charge earning, refill fairness, game over,
 persistence, rush timer, pause and a 60-second stress run.

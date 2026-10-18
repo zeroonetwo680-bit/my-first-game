@@ -35,6 +35,7 @@
       <button id="bn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
     </div>
     <div id="powerbar">
+      <button id="bn-hint" class="pw" aria-label="Hint"><span class="ic">&#128161;</span><b>FREE</b><i class="cd" id="cd-hint"></i></button>
       <button id="pw-rotate" class="pw" aria-label="Rotate piece"><span class="ic">&#x21BB;</span><b id="pw-rot-n">3</b><i class="cd" id="cd-rotate"></i></button>
       <button id="pw-bomb" class="pw" aria-label="Bomb"><span class="ic">&#xD83D;&#xDCA5;</span><b id="pw-bomb-n">1</b><i class="cd" id="cd-bomb"></i></button>
       <button id="pw-hammer" class="pw" aria-label="Hammer"><span class="ic">&#xD83D;&#xDD28;</span><b id="pw-ham-n">1</b><i class="cd" id="cd-hammer"></i></button>
@@ -58,7 +59,8 @@
       <p class="hint">Drag blocks onto the 8&times;8 grid &bull; fill rows <b>or</b> columns to blast them<br>
       <b>Double-tap a piece to rotate</b> &bull; bombs clear 3&times;3 &bull; hammers crush cells<br>
       Chain streaks for huge multipliers &mdash; clear the whole board for +500!<br>
-      Difficulty climbs every 10 lines &bull; dark <b>rocks</b> crack once, then shatter (+50)</p>
+      Difficulty climbs every 10 lines &bull; dark <b>rocks</b> crack once, then shatter (+50)<br>
+      Orange <b>charged cells</b> explode 3&times;3 on landing &bull; <b>&#9889; Second Chance</b> saves a lost run once</p>
       <div class="hs-cols">
         <div class="hs-block">
           <h2>CLASSIC TOP 5</h2>
@@ -88,6 +90,7 @@
     <div class="screen-inner">
       <h1 class="title-sm wrecked" id="over-title">NO MOVES LEFT</h1>
       <div id="bn-new-best" class="new-best hidden">&#9733; NEW PERSONAL BEST &#9733;</div>
+      <button id="bn-revive" class="btn big revive-btn hidden">&#9889; SECOND CHANCE &mdash; CLEAR BOTTOM &amp; CONTINUE</button>
       <div class="stats-grid">
         <div class="stat main"><label>SCORE</label><b id="ov-score">0</b></div>
         <div class="stat"><label>LINES</label><b id="ov-lines">0</b></div>
