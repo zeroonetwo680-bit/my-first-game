@@ -63,9 +63,25 @@
         <p class="tagline">COMBAT RACING ARENA</p>
       </div>
       <button id="btn-play" class="btn primary big">ENTER THE ARENA</button>
+      <div class="garage">
+        <button id="car-prev" class="arrow-btn" aria-label="Previous car">&#8249;</button>
+        <div id="car-card" class="car-card">
+          <div id="car-name">INTERCEPTOR</div>
+          <div id="car-desc">Balanced pursuit vehicle</div>
+          <div id="car-stats"></div>
+          <button id="car-action" class="btn small-btn">&#10003; SELECTED</button>
+        </div>
+        <button id="car-next" class="arrow-btn" aria-label="Next car">&#8250;</button>
+      </div>
+      <div id="bank-label">SALVAGE &#x24B2; 0</div>
+      <div class="diff-row">
+        <button class="diff-btn" data-diff="easy">EASY</button>
+        <button class="diff-btn" data-diff="normal">NORMAL</button>
+        <button class="diff-btn" data-diff="inferno">INFERNO</button>
+      </div>
       <div id="controls-hint" class="hint"></div>
       <div class="hs-block">
-        <h2>TOP DRIVERS</h2>
+        <h2>TOP DRIVERS<span id="hs-diff-tag-start"></span></h2>
         <div id="start-highscores" class="hs-table"></div>
       </div>
     </div>
@@ -103,13 +119,14 @@
         <div class="stat"><label>MAX COMBO</label><b id="stat-combo">x1</b></div>
         <div class="stat"><label>WAVE</label><b id="stat-wave">1</b></div>
         <div class="stat"><label>TIME</label><b id="stat-time">0:00</b></div>
+        <div class="stat"><label>SALVAGE</label><b id="stat-coins">+0</b></div>
       </div>
       <div id="save-row" class="save-row hidden">
         <input id="name-input" maxlength="12" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
         <button id="btn-save" class="btn">SAVE</button>
       </div>
       <div class="hs-block">
-        <h2>TOP DRIVERS</h2>
+        <h2>TOP DRIVERS<span id="hs-diff-tag-over"></span></h2>
         <div id="over-highscores" class="hs-table"></div>
       </div>
       <button id="btn-again" class="btn primary big">RACE AGAIN</button>

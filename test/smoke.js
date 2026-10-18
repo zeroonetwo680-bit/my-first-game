@@ -56,7 +56,7 @@ const sandbox = {
     setItem: (k, v) => { storage[k] = String(v); },
     removeItem: k => { delete storage[k]; }
   },
-  navigator: { maxTouchPoints: 0 },
+  navigator: { maxTouchPoints: 0, getGamepads: () => [] },
   matchMedia: () => ({ matches: false }),
   requestAnimationFrame: cb => { rafCb = cb; return 1; },
   document: {
@@ -65,6 +65,7 @@ const sandbox = {
     getElementById: id => (elements[id] || (elements[id] = makeEl(id))),
     createElement: () => Object.assign(makeEl('dyn'), { width: 0, height: 0, getContext: () => makeCtx() }),
     querySelector: sel => (elements[sel] || (elements[sel] = makeEl(sel))),
+    querySelectorAll: () => [],
     addEventListener() {}
   }
 };
@@ -347,18 +348,83 @@ check('sniper shows laser telegraph', 'this.__sniperLaser', v => v === true);
 check('sniper fires high-speed shot', 'this.__sniperFired', v => v === true);
 check('sniper shot is lethal-grade damage bullet present or player hit', 'Game.player.hp >= 0', v => v === true);
 
+console.log('--- garage: coins, buy, select, per-car stats ---');
+run(`
+this.__bought = false;
+this.__lockedRefused = false;
+this.__bankAfter = 0;
+Game.bank = 1000;
+this.__bought = Game.buyCar('titan');
+this.__bankAfter = Game.bank;
+this.__lockedRefused = !Game.selectCar('vortex') && Game.carId === 'titan';
+Game.startRun();
+`);
+check('titan bought for 600 coins', 'this.__bought && this.__bankAfter === 400', v => v === true);
+check('locked car refused', 'this.__lockedRefused', v => v === true);
+check('car stats applied (titan hull)', 'Game.player.maxHp', h => h === 160);
+check('car speed multiplier applied', 'Game.player.carSpeed', v => v < 1);
+check('bank persisted to storage', 'JSON.parse(localStorage.getItem("nw.bank"))', v => v === 400);
+
+console.log('--- difficulty: separate score tables & multipliers ---');
+run(`
+Game.setDiff('easy');
+this.__easyTable = Game.diff;
+Game.score = 7777; Game.kills = 10; Game.wave = 4; Game.maxCombo = 2;
+Game.saveScore();
+this.__easySaved = store.get('nw.scores.easy', []).some(e => e.score === 7777);
+Game.setDiff('normal');
+this.__normalClean = !store.get('nw.scores.normal', []).some(e => e.score === 7777);
+this.__hsReloaded = !Game.highscores.some(e => e.score === 7777);
+`);
+check('difficulty switch works', 'this.__easyTable', v => v === 'easy');
+check('easy table saved', 'this.__easySaved', v => v === true);
+check('normal table untouched', 'this.__normalClean', v => v === true);
+check('score view reloaded per difficulty', 'this.__hsReloaded', v => v === true);
+
+console.log('--- polish: nitro trail & ground lights ---');
+run(`
+Game.startRun();
+Game.trail.length = 0;
+for (let i = 0; i < 90; i++) {
+  Input.keys['KeyW'] = true; Input.keys['ShiftLeft'] = true;
+  if (Game.state === 'upgrade') Game.chooseUpgrade(0);
+  __frame((76000 + i) * 16.6);
+  Input.endFrame();
+}
+`);
+check('nitro trail emits points', 'Game.trail.length', n => n > 5);
+check('explosions cast ground lights', 'FX.explosion(Game.player.x, Game.player.y, "#ff9a3d", 1.5, false), FX.groundLights.length', n => n >= 1);
+
+console.log('--- gamepad: fire & drive ---');
+run(`
+const fake = { connected: true, axes: [0.9, -0.5, 0, 0], buttons: [] };
+for (let i = 0; i < 10; i++) fake.buttons.push({ pressed: false, value: 0 });
+fake.buttons[0] = { pressed: true, value: 1 };
+navigator.getGamepads = () => [fake];
+Input.pollPad();
+this.__padFire = Input.getFire();
+const drv = Input.getDrive();
+this.__padDrive = !!(drv.stick && drv.stick.x > 0.5);
+this.__padRocketWorks = (fake.buttons[5] = { pressed: true, value: 1 }, Input.pollPad(), Input.consumeRocket());
+navigator.getGamepads = () => [];
+Input.pollPad();
+`);
+check('gamepad A button fires', 'this.__padFire', v => v === true);
+check('gamepad left stick drives', 'this.__padDrive', v => v === true);
+check('gamepad RB fires rocket', 'this.__padRocketWorks', v => v === true);
+
 console.log('--- death & game over ---');
 run(`
 Game.player.shield = 0;
 damagePlayer(9999, Game.player.x, Game.player.y);
-for (let i = 0; i < 200; i++) __frame((70000 + i) * 16.6);
+for (let i = 0; i < 200; i++) __frame((77000 + i) * 16.6);
 `);
 check('player died', 'Game.player.dead', d => d === true);
 check('game over reached', 'Game.state', s => s === 'over');
 
 console.log('--- high scores ---');
 run('Game.score = 12345; Game.renderScores("over-highscores"); if (Game.qualifies()) Game.saveScore();');
-check('score saved to storage', 'JSON.parse(localStorage.getItem("nw.scores")).length', n => n >= 1);
+check('score saved to storage', 'JSON.parse(localStorage.getItem("nw.scores.normal") || "[]").filter(e => e.score > 0).length', n => n >= 1);
 check('restart works', 'Game.startRun(); Game.state', s => s === 'playing');
 run(`
 for (let i = 0; i < 600; i++) {

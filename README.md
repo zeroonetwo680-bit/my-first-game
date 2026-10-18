@@ -27,8 +27,17 @@ python3 -m http.server 8000
 | Mute | `M` | speaker button |
 | Instant restart | `Enter` / `R` (game over) | big buttons |
 
+**Gamepad supported** (standard mapping): left stick drives, A/RT fires,
+LB/LT/B nitro, RB/X rocket, Y swaps weapons, Start pauses, right stick aims.
+
 ## Features
 
+- **Garage with unlockable cars** — earn salvage coins (coin pickups, wave
+  clears, boss kills) and buy TITAN (tank), VORTEX (glass-cannon racer) or
+  WARDEN (shotgun onboard). Selection persists between sessions.
+- **Three difficulty levels** — EASY / NORMAL / INFERNO change enemy stats,
+  wave sizes and score multipliers (0.75x / 1x / 1.5x), each with its own
+  high-score table.
 - **Tight arcade car physics** — forward/lateral grip model with drifty skids,
   boost, wall bounces, and mass-based car-to-car collisions.
 - **Boss every 5 waves** — WARLORD, a massive armored car with telegraphed
@@ -49,6 +58,8 @@ python3 -m http.server 8000
   bonuses, pickups (repair, coin, triple gun, shield, nitro).
 - **Full game loop** — start screen with attract mode, pause, game-over
   breakdown, and a persistent **local top-8 high-score table** (localStorage).
+- **Extra polish** — glowing nitro light trail, explosions that light up the
+  arena floor, boss minion waves.
 - **Procedural audio** — engine pitch tied to speed, gunfire, explosions,
   skids, and a minimal synthwave loop, all synthesized in WebAudio.
 - **60 fps engineering** — pooled particles/bullets, pre-rendered glow sprites

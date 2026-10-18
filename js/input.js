@@ -14,6 +14,11 @@ const Input = {
   stick: { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0 },
   touch: { fire: false, boost: false, rocketPressed: false },
   swapPressed: false,
+  padState: null,
+  padPrev: Object.create(null),
+  padRocket: false,
+  padSwap: false,
+  padPause: false,
   touchUsed: false,
 
   el: {},
@@ -139,6 +144,39 @@ const Input = {
     el.addEventListener('pointerleave', up);
   },
 
+  /** poll the first connected gamepad (standard mapping) */
+  pollPad() {
+    let gp = null;
+    try {
+      const pads = navigator.getGamepads ? navigator.getGamepads() : [];
+      for (const g of pads) if (g && g.connected) { gp = g; break; }
+    } catch (e) { gp = null; }
+    if (!gp) { this.padState = null; this.padRocket = false; this.padSwap = false; this.padPause = false; return; }
+    const dz = (v) => (Math.abs(v) < 0.2 ? 0 : v);
+    const ax = [dz(gp.axes[0] || 0), dz(gp.axes[1] || 0), dz(gp.axes[2] || 0), dz(gp.axes[3] || 0)];
+    const btn = (i) => !!(gp.buttons[i] && (gp.buttons[i].pressed || gp.buttons[i].value > 0.4));
+    const edge = (i) => {
+      const nowP = btn(i), was = !!this.padPrev[i];
+      this.padPrev[i] = nowP;
+      return nowP && !was;
+    };
+    this.padRocket = edge(5) || edge(2);   // RB or X fires a rocket
+    this.padSwap = edge(3);                // Y swaps weapon
+    this.padPause = edge(9);               // Start pauses
+    this.padState = {
+      ax,
+      fire: btn(0) || btn(7),              // A or RT
+      boost: btn(4) || btn(6) || btn(1),   // LB, LT or B
+      aimX: Math.abs(ax[2]) > 0.3 ? ax[2] : 0,
+      aimY: Math.abs(ax[3]) > 0.3 ? ax[3] : 0
+    };
+  },
+
+  consumePadPause() {
+    if (this.padPause) { this.padPause = false; return true; }
+    return false;
+  },
+
   updateKnob(dx, dy) {
     this.el.knob.style.transform = `translate(${dx}px, ${dy}px)`;
   },
@@ -151,6 +189,9 @@ const Input = {
     if (k['KeyD'] || k['ArrowRight']) steer += 1;
     if (k['KeyW'] || k['ArrowUp']) throttle += 1;
     if (k['KeyS'] || k['ArrowDown']) throttle -= 1;
+    if (this.padState && (Math.abs(this.padState.ax[0]) + Math.abs(this.padState.ax[1])) > 0.22) {
+      return { stick: { x: this.padState.ax[0], y: this.padState.ax[1] } };
+    }
     if (this.stick.active) {
       const mag = Math.hypot(this.stick.dx, this.stick.dy);
       if (mag > 0.22) {
@@ -163,24 +204,31 @@ const Input = {
   },
 
   getFire() {
-    return !!this.keys['Space'] || !!this.keys['KeyJ'] || this.mouse.down || this.touch.fire;
+    return !!this.keys['Space'] || !!this.keys['KeyJ'] || this.mouse.down || this.touch.fire ||
+      !!(this.padState && this.padState.fire);
   },
 
   getBoost() {
-    return !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight'] || !!this.keys['KeyK'] || this.touch.boost;
+    return !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight'] || !!this.keys['KeyK'] || this.touch.boost ||
+      !!(this.padState && this.padState.boost);
   },
 
   consumeRocket() {
-    if (this.keys['KeyE'] || this.keys['KeyR'] || this.touch.rocketPressed) {
+    if (this.keys['KeyE'] || this.keys['KeyR'] || this.touch.rocketPressed || this.padRocket) {
       this.keys['KeyE'] = false; this.keys['KeyR'] = false;
       this.touch.rocketPressed = false;
+      this.padRocket = false;
       return true;
     }
     return false;
   },
 
   consumeSwap() {
-    if (this.swapPressed) { this.swapPressed = false; return true; }
+    if (this.swapPressed || this.padSwap) {
+      this.swapPressed = false;
+      this.padSwap = false;
+      return true;
+    }
     return false;
   },
 
@@ -193,6 +241,14 @@ const Input = {
     this.pressed = Object.create(null);
     this.touch.rocketPressed = false;
     this.swapPressed = false;
+  },
+
+  /** right-stick aim override, null when idle */
+  padAim() {
+    if (this.padState && (this.padState.aimX || this.padState.aimY)) {
+      return Math.atan2(this.padState.aimY, this.padState.aimX);
+    }
+    return null;
   },
 
   /** should turret follow the mouse? (desktop: mouse moved in last 3s) */

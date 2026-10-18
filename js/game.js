@@ -242,6 +242,21 @@ const UPGRADES = [
   { id: 'shotgun', icon: '\uD83D\uDD2B', name: 'SCATTER GUN',    desc: 'Unlock the shotgun \u2014 swap with Q', max: 1, cond: p => p.weapons.indexOf('shotgun') < 0, apply: p => { p.weapons.push('shotgun'); p.weapon = 'shotgun'; } }
 ];
 
+/* ---------- garage: unlockable cars, bought with salvage coins ---------- */
+const CARS = {
+  interceptor: { name: 'INTERCEPTOR', price: 0,    desc: 'Balanced pursuit vehicle', hp: 100, speed: 1.0,  turn: 1.0,  hull5: 3, spd5: 3, grp5: 3 },
+  titan:       { name: 'TITAN',       price: 600,  desc: 'Heavy plating, slower hull', hp: 160, speed: 0.9,  turn: 0.88, hull5: 5, spd5: 2, grp5: 2 },
+  vortex:      { name: 'VORTEX',      price: 1000, desc: 'Overclocked racer, fragile', hp: 80,  speed: 1.18, turn: 1.15, hull5: 2, spd5: 5, grp5: 4 },
+  warden:      { name: 'WARDEN',      price: 1500, desc: 'Scatter gun onboard, +1 rocket', hp: 115, speed: 1.02, turn: 1.0, hull5: 4, spd5: 3, grp5: 3, weapon: 'shotgun', rockets: 3 }
+};
+
+/* ---------- difficulty levels: separate score tables ---------- */
+const DIFFS = {
+  easy:    { label: 'EASY',    hp: 0.85, speed: 0.92, count: 0.8,   contact: 0.8,  score: 0.75 },
+  normal:  { label: 'NORMAL',  hp: 1.0,  speed: 1.0,  count: 1.0,   contact: 1.0,  score: 1.0 },
+  inferno: { label: 'INFERNO', hp: 1.2,  speed: 1.1,  count: 1.25,  contact: 1.25, score: 1.5 }
+};
+
 /* ============================================================
    Game
    ============================================================ */
@@ -278,6 +293,13 @@ const Game = {
   highscores: [],
   lastEntry: null,
   hudCache: {},
+  diff: store.get('nw.diff', 'normal'),
+  carId: store.get('nw.car', 'interceptor'),
+  carViewIdx: 0,
+  bank: store.get('nw.bank', 0),
+  unlocked: store.get('nw.unlocked', { interceptor: true }),
+  coinsEarned: 0,
+  trail: [],
 
   /* ---------------- init ---------------- */
   init() {
@@ -311,16 +333,20 @@ const Game = {
     FX.clear();
     this.decals.clear();
 
+    const car = CARS[this.carId] || CARS.interceptor;
     this.player = {
       team: 'player', x: WORLD.w / 2, y: WORLD.h / 2,
       angle: -Math.PI / 2, turret: -Math.PI / 2,
       vx: 0, vy: 0, r: 19, mass: 4.5, def: null,
-      hp: 100, maxHp: 100,
-      boost: 100, rockets: 2, maxRockets: 3, rocketRegen: 0,
+      hp: car.hp, maxHp: car.hp,
+      carSpeed: car.speed, carTurn: car.turn,
+      boost: 100, rockets: car.rockets != null ? car.rockets : 2, maxRockets: 3, rocketRegen: 0,
       fireCd: 0, triple: 0, shield: 0,
       boosting: false, flash: 0, skidT: 0, smokeT: 0,
       contactCd: 0, dead: false,
-      weapons: ['gun'], weapon: 'gun',
+      weapons: car.weapon ? ['shotgun', 'gun'] : ['gun'],
+      weapon: car.weapon || 'gun',
+      trailT: 0,
       mods: { dmg: 1, fireRate: 1, speed: 1, turn: 1, nitroRegen: 1, magnet: 1, scoreMult: 1 },
       upgradeCounts: {}
     };
@@ -343,6 +369,8 @@ const Game = {
     this.hudCache = {};
     this.pendingUpgrades = false;
     this.offered = [];
+    this.coinsEarned = 0;
+    this.trail.length = 0;
   },
 
   genPillars() {
@@ -366,6 +394,8 @@ const Game = {
     this.resetWorld();
     this.state = 'menu';
     setScreen('start');
+    this.loadScores();
+    this.syncGarage();
     document.getElementById('hud').classList.add('hidden');
     Input.showTouchUI(false);
     // attract mode cars
@@ -453,6 +483,10 @@ const Game = {
       }
     }
 
+    for (let i = this.trail.length - 1; i >= 0; i--) {
+      this.trail[i].life -= dt;
+      if (this.trail[i].life <= 0) this.trail.splice(i, 1);
+    }
     FX.update(dt);
     this.updateCamera(dt);
 
@@ -531,9 +565,9 @@ const Game = {
 
     const base = wantBoost ? BOOST_STATS : PLAYER_STATS;
     const m = p.mods;
-    _pStats.accel = base.accel * m.speed;
-    _pStats.maxF = base.maxF * m.speed;
-    _pStats.turn = base.turn * m.turn;
+    _pStats.accel = base.accel * m.speed * p.carSpeed;
+    _pStats.maxF = base.maxF * m.speed * p.carSpeed;
+    _pStats.turn = base.turn * m.turn * p.carTurn;
     _pStats.grip = base.grip;
     driveCar(p, throttle, steer, dt, _pStats);
 
@@ -565,6 +599,16 @@ const Game = {
       }
     }
 
+    // nitro light trail
+    if (wantBoost) {
+      p.trailT -= dt;
+      if (p.trailT <= 0) {
+        p.trailT = 0.014;
+        this.trail.push({ x: p.x - Math.cos(p.angle) * p.r * 0.8, y: p.y - Math.sin(p.angle) * p.r * 0.8, life: 0.3, max: 0.3 });
+        if (this.trail.length > 42) this.trail.shift();
+      }
+    }
+
     // damage smoke
     if (p.hp < 38) {
       p.smokeT -= dt;
@@ -577,7 +621,10 @@ const Game = {
 
     // ----- turret / aim -----
     let desired = p.angle;
-    if (Input.mouseAiming() && !IS_TOUCH_ONLY) {
+    const padAim = Input.padAim();
+    if (padAim !== null) {
+      desired = padAim;
+    } else if (Input.mouseAiming() && !IS_TOUCH_ONLY) {
       const wx = this.cam.x + (Input.mouse.x - vw / 2) / this.cam.zoom;
       const wy = this.cam.y + (Input.mouse.y - vh / 2) / this.cam.zoom;
       desired = Math.atan2(wy - p.y, wx - p.x);
@@ -743,8 +790,8 @@ const Game = {
 
   spawnEnemy(type, x, y) {
     const def = ENEMY_TYPES[type];
-    const hpScale = 1 + (this.wave - 1) * 0.055;
-    const hp = type === 'boss' ? def.hp + this.wave * 80 : def.hp * hpScale;
+    const hpScale = (1 + (this.wave - 1) * 0.055) * DIFFS[this.diff].hp;
+    const hp = type === 'boss' ? (def.hp + this.wave * 80) * DIFFS[this.diff].hp : def.hp * hpScale;
     const e = {
       type, def, team: 'enemy',
       x, y, angle: Math.atan2(this.player.y - y, this.player.x - x),
@@ -782,7 +829,7 @@ const Game = {
       banner('\u26A0 BOSS WAVE \u26A0');
       AudioSys.bossHorn();
     } else {
-      const count = Math.min(2 + n * 2, 26);
+      const count = Math.min(Math.round((2 + n * 2) * DIFFS[this.diff].count), 30);
       for (let i = 0; i < count; i++) {
         const r = Math.random();
         let t = 'rammer';
@@ -803,7 +850,8 @@ const Game = {
   },
 
   waveCleared() {
-    const bonus = 200 + this.wave * 100;
+    const bonus = Math.round((200 + this.wave * 100) * DIFFS[this.diff].score);
+    this.coinsEarned += 10 * this.wave;
     this.score += bonus;
     FX.text(this.player.x, this.player.y - 30, 'WAVE CLEAR  +' + bonus, '#35f0ff', 20);
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + 8);
@@ -812,6 +860,89 @@ const Game = {
     this.betweenWaves = true;
     this.betweenTimer = 2.0;
     this.pendingUpgrades = true;
+  },
+
+  /* ---------------- garage & difficulty ---------------- */
+  carList() { return Object.keys(CARS); },
+
+  setDiff(d) {
+    if (!DIFFS[d] || this.diff === d) { if (DIFFS[d]) { this.syncGarage(); } return; }
+    this.diff = d;
+    store.set('nw.diff', d);
+    this.loadScores();
+    this.syncGarage();
+    AudioSys.ui();
+  },
+
+  viewCar(dir) {
+    const L = this.carList();
+    this.carViewIdx = (this.carViewIdx + dir + L.length) % L.length;
+    this.syncGarage();
+    AudioSys.ui();
+  },
+
+  selectCar(id) {
+    if (!this.unlocked[id]) return false;
+    this.carId = id;
+    store.set('nw.car', id);
+    this.syncGarage();
+    return true;
+  },
+
+  buyCar(id) {
+    const car = CARS[id];
+    if (!car || this.unlocked[id]) return false;
+    if (this.bank < car.price) return false;
+    this.bank -= car.price;
+    this.unlocked[id] = true;
+    store.set('nw.bank', this.bank);
+    store.set('nw.unlocked', this.unlocked);
+    this.carId = id;
+    store.set('nw.car', id);
+    this.syncGarage();
+    return true;
+  },
+
+  carAction() {
+    const id = this.carList()[this.carViewIdx];
+    if (this.unlocked[id]) { this.selectCar(id); AudioSys.ui(); }
+    else if (this.bank >= CARS[id].price) { this.buyCar(id); AudioSys.pickup(); }
+  },
+
+  syncGarage() {
+    const L = this.carList();
+    const id = L[this.carViewIdx] || 'interceptor';
+    const car = CARS[id];
+    const locked = !this.unlocked[id];
+    const bars = (n) => { let r = ''; for (let i = 0; i < 5; i++) r += i < n ? '\u25AE' : '\u25AF'; return r; };
+    const nameEl = document.getElementById('car-name');
+    const cardEl = document.getElementById('car-card');
+    const actEl = document.getElementById('car-action');
+    if (!nameEl || !actEl) return;
+    nameEl.textContent = car.name;
+    document.getElementById('car-desc').textContent = car.desc;
+    document.getElementById('car-stats').innerHTML =
+      'HULL ' + bars(car.hull5) + '<br>SPEED ' + bars(car.spd5) + '<br>GRIP ' + bars(car.grp5);
+    cardEl.classList.toggle('locked', locked);
+    if (locked) {
+      actEl.textContent = 'BUY ' + car.price + ' \u24B2';
+      actEl.classList.toggle('cant', this.bank < car.price);
+    } else if (this.carId === id) {
+      actEl.textContent = '\u2713 SELECTED';
+      actEl.classList.remove('cant');
+    } else {
+      actEl.textContent = 'SELECT';
+      actEl.classList.remove('cant');
+    }
+    document.getElementById('bank-label').textContent = 'SALVAGE \u24B2 ' + fmtNum(this.bank);
+    for (const b of document.querySelectorAll('.diff-btn')) {
+      b.classList.toggle('active', b.dataset.diff === this.diff);
+    }
+    const tag = ' \u2014 ' + DIFFS[this.diff].label;
+    const t1 = document.getElementById('hs-diff-tag-start');
+    const t2 = document.getElementById('hs-diff-tag-over');
+    if (t1) t1.textContent = tag;
+    if (t2) t2.textContent = tag;
   },
 
   switchWeapon() {
@@ -1112,7 +1243,7 @@ const Game = {
     }
 
     const def = e.def;
-    const speedScale = Math.min(1 + (this.wave - 1) * 0.02, 1.22);
+    const speedScale = Math.min(1 + (this.wave - 1) * 0.02, 1.22) * DIFFS[this.diff].speed;
     const stats = e.boosting
       ? { accel: def.accel * 1.5, maxF: def.speed * speedScale * 1.18, turn: def.turn * 0.85, grip: 7.5 }
       : { accel: def.accel, maxF: def.speed * speedScale, turn: def.turn, grip: 9 };
@@ -1308,7 +1439,7 @@ const Game = {
     const def = PICKUP_DEFS[pk.type];
     switch (pk.type) {
       case 'repair': p.hp = Math.min(p.maxHp, p.hp + 35); break;
-      case 'coin': this.score += 150; break;
+      case 'coin': this.score += 150; this.coinsEarned += 40; break;
       case 'nitro': p.boost = Math.min(100, p.boost + 50); break;
       case 'triple': p.triple = 10; break;
       case 'shield': p.shield = 6; break;
@@ -1376,7 +1507,7 @@ const Game = {
     this.comboTimer = 3;
     this.maxCombo = Math.max(this.maxCombo, Math.max(1, this.combo));
     const mult = Math.max(1, this.combo);
-    const gained = Math.round(e.def.score * mult * this.player.mods.scoreMult);
+    const gained = Math.round(e.def.score * mult * this.player.mods.scoreMult * DIFFS[this.diff].score);
     this.score += gained;
     FX.text(e.x, e.y, '+' + gained + (mult > 1 ? '  x' + mult : ''), mult > 1 ? '#ffd24d' : '#9feeff', mult > 1 ? 18 : 15);
     this.dropPickup(e.x, e.y);
@@ -1408,6 +1539,9 @@ const Game = {
     const q = this.qualifies();
     document.getElementById('save-row').classList.toggle('hidden', !q);
     document.getElementById('new-best').classList.toggle('hidden', !this.isPersonalBest());
+    this.bank += this.coinsEarned;
+    store.set('nw.bank', this.bank);
+    document.getElementById('stat-coins').textContent = '+' + fmtNum(this.coinsEarned);
     document.getElementById('stat-score').textContent = fmtNum(this.score);
     document.getElementById('stat-kills').textContent = this.kills;
     document.getElementById('stat-combo').textContent = 'x' + Math.max(1, this.maxCombo);
@@ -1436,7 +1570,7 @@ const Game = {
     this.highscores.push(entry);
     this.highscores.sort((a, b) => b.score - a.score);
     this.highscores = this.highscores.slice(0, 8);
-    store.set('nw.scores', this.highscores);
+    store.set('nw.scores.' + this.diff, this.highscores);
     this.lastEntry = entry;
     document.getElementById('save-row').classList.add('hidden');
     this.renderScores('over-highscores');
@@ -1445,7 +1579,13 @@ const Game = {
   },
 
   loadScores() {
-    this.highscores = store.get('nw.scores', []);
+    if (!DIFFS[this.diff]) this.diff = 'normal';
+    // one-time migration from the old single-table save
+    const legacy = store.get('nw.scores', null);
+    if (legacy && !store.get('nw.scores.normal', null)) {
+      store.set('nw.scores.normal', legacy);
+    }
+    this.highscores = store.get('nw.scores.' + this.diff, []);
     if (!Array.isArray(this.highscores)) this.highscores = [];
   },
 
@@ -1541,7 +1681,7 @@ const Game = {
     }
     const p = this.player;
     if (!p.dead) {
-      drawCar(p, SPRITES.player);
+      drawCar(p, SPRITES.pcars[p.carId] || SPRITES.pcars.interceptor);
       if (p.shield > 0) {
         const blink = p.shield < 1.2 && Math.floor(p.shield * 8) % 2 === 0;
         if (!blink) {
@@ -1559,6 +1699,24 @@ const Game = {
 
     // additive pass
     ctx.globalCompositeOperation = 'lighter';
+    // nitro light trail
+    if (this.trail.length > 1) {
+      ctx.lineCap = 'round';
+      for (let i = 1; i < this.trail.length; i++) {
+        const a = this.trail[i - 1], b = this.trail[i];
+        const al = clamp(b.life / b.max, 0, 1);
+        ctx.globalAlpha = al * 0.5;
+        ctx.strokeStyle = '#35f0ff';
+        ctx.lineWidth = 2 + 7 * al;
+        ctx.beginPath();
+        ctx.moveTo(a.x, a.y);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+      }
+      ctx.globalAlpha = 1;
+      ctx.lineCap = 'butt';
+    }
+    FX.drawGroundLights(ctx);
     this.drawBullets();
     for (const r of this.rockets.items) {
       if (!r.active) continue;
@@ -1913,7 +2071,7 @@ function collideCars(a, b, involvesPlayer) {
     e.contactCd = 1.0;
     e.retreatT = Game.wave <= 1 ? 1.3 : 0.7;
     P.contactCd = 0.4;
-    damagePlayer(e.def.contact * clamp(0.6 + 0.08 * Game.wave, 0.6, 1) * (Game.runTime < 3 ? 0.5 : 1), e.x, e.y);
+    damagePlayer(e.def.contact * clamp(0.6 + 0.08 * Game.wave, 0.6, 1) * DIFFS[Game.diff].contact * (Game.runTime < 3 ? 0.5 : 1), e.x, e.y);
     // enemies bounce off hard, player gets nudged
     const a2 = Math.atan2(e.y - P.y, e.x - P.x);
     e.vx += Math.cos(a2) * 430 / e.mass;
@@ -1956,8 +2114,9 @@ function killEnemy(e) {
     AudioSys.explosion(true);
     FX.addShake(16);
     Game.hitStop = Math.max(Game.hitStop, 0.09);
-    const bonus = 1000 + Game.wave * 200;
+    const bonus = Math.round((1000 + Game.wave * 200) * DIFFS[Game.diff].score);
     Game.score += bonus;
+    Game.coinsEarned += 150;
     FX.text(e.x, e.y - 62, 'BOSS DOWN  +' + bonus, '#ffd24d', 24);
     banner('BOSS DOWN');
     for (let i = 0; i < 3; i++) {
@@ -2090,6 +2249,12 @@ function buildAllSprites() {
   SPRITES.boss = makeCarSprite({ len: 104, wid: 62, body: '#c22a55', glow: '#ff2255', stripe: '#ffd9e6', heavy: true });
   SPRITES.bomber = makeCarSprite({ len: 38, wid: 22, body: '#e8b420', glow: '#ffd24d', stripe: '#1a1408' });
   SPRITES.sniper = makeCarSprite({ len: 50, wid: 20, body: '#5a7bff', glow: '#8fa8ff', stripe: '#dfe6ff' });
+  SPRITES.pcars = {
+    interceptor: makeCarSprite({ len: 46, wid: 26, body: '#25c9e8', glow: '#35f0ff', stripe: '#eafcff' }),
+    titan: makeCarSprite({ len: 54, wid: 34, body: '#6f7f96', glow: '#a9bdd6', stripe: '#e6edf6', heavy: true }),
+    vortex: makeCarSprite({ len: 44, wid: 23, body: '#8a4fe0', glow: '#b06cff', stripe: '#f0e4ff' }),
+    warden: makeCarSprite({ len: 47, wid: 29, body: '#d99a26', glow: '#ffb84d', stripe: '#fff2d0', heavy: true })
+  };
   for (const k in PICKUP_DEFS) {
     PICKUP_DEFS[k].spr = makePickupSprite(PICKUP_DEFS[k].color, PICKUP_DEFS[k].glyph);
   }
@@ -2107,6 +2272,13 @@ function wireUI() {
   on('btn-again', () => { AudioSys.ui(); Game.startRun(); });
   on('btn-menu', () => { AudioSys.ui(); Game.enterMenu(); });
   on('btn-save', () => Game.saveScore());
+  on('car-prev', () => Game.viewCar(-1));
+  on('car-next', () => Game.viewCar(1));
+  on('car-action', () => Game.carAction());
+  const diffBtns = document.querySelectorAll('.diff-btn');
+  for (const b of diffBtns) {
+    b.addEventListener('click', (e) => { e.preventDefault(); Game.setDiff(b.dataset.diff); });
+  }
   on('btn-pause', () => { if (Game.state === 'playing' || Game.state === 'paused') Game.togglePause(); });
   on('btn-mute', () => Game.toggleMute());
 
@@ -2122,7 +2294,7 @@ function wireUI() {
   if (IS_TOUCH) {
     hint.innerHTML = 'LEFT SIDE &mdash; drag to drive &bull; <b>FIRE</b> / <b>NOS</b> / <b>RKT</b> buttons &bull; <b>SWP</b> swaps weapons (when unlocked) &bull; auto-aim assist ON';
   } else {
-    hint.innerHTML = '<span class="key">W A S D</span> drive &bull; <span class="key">SPACE</span>/<span class="key">CLICK</span> fire &bull; <span class="key">SHIFT</span> nitro &bull; <span class="key">E</span> rocket &bull; <span class="key">Q</span>/right-click swap weapon &bull; <span class="key">P</span> pause &bull; mouse aims the gun';
+    hint.innerHTML = '<span class="key">GAMEPAD</span> supported \u2022 <span class="key">W A S D</span> drive &bull; <span class="key">SPACE</span>/<span class="key">CLICK</span> fire &bull; <span class="key">SHIFT</span> nitro &bull; <span class="key">E</span> rocket &bull; <span class="key">Q</span>/right-click swap weapon &bull; <span class="key">P</span> pause &bull; mouse aims the gun';
   }
 }
 
@@ -2135,6 +2307,7 @@ function frame(now) {
   lastT = now;
   if (dt > 0.1) dt = 0.1;
 
+  Input.pollPad();
   if (Input.consumePressed('KeyM')) Game.toggleMute();
 
   switch (Game.state) {
@@ -2144,7 +2317,7 @@ function frame(now) {
       break;
 
     case 'playing':
-      if (Input.consumePressed('KeyP') || Input.consumePressed('Escape')) { Game.togglePause(); break; }
+      if (Input.consumePressed('KeyP') || Input.consumePressed('Escape') || Input.consumePadPause()) { Game.togglePause(); break; }
       if (Game.hitStop > 0) {
         Game.hitStop -= dt;
         FX.update(dt * 0.35);

@@ -14,6 +14,7 @@ const FX = {
   }), 40),
 
   glowCache: {},
+  groundLights: [],
   shake: 0, shakeX: 0, shakeY: 0,
   flash: 0,
 
@@ -103,6 +104,8 @@ const FX = {
 
   explosion(x, y, color, scale, decal) {
     scale = scale || 1;
+    this.groundLights.push({ x, y, life: 0.3, max: 0.3, size: 190 * scale, color });
+    if (this.groundLights.length > 10) this.groundLights.shift();
     this.emit({ x, y, life: 0.14, size: 26 * scale, color: '#ffffff', kind: 'glow', grow: 240 * scale });
     this.ring(x, y, color, 24 * scale, 0.32);
     this.sparks(x, y, color, Math.round(16 * scale), 420 * scale);
@@ -180,12 +183,33 @@ const FX = {
       t.y += t.vy * dt;
       t.vy *= Math.max(0, 1 - 2.5 * dt);
     }
+
+    // ground lights
+    const gl = this.groundLights;
+    for (let i = gl.length - 1; i >= 0; i--) {
+      gl[i].life -= dt;
+      if (gl[i].life <= 0) gl.splice(i, 1);
+    }
   },
 
   clear() {
     this.particles.deactivateAll();
     this.texts.deactivateAll();
+    this.groundLights.length = 0;
     this.shake = 0; this.shakeX = 0; this.shakeY = 0; this.flash = 0;
+  },
+
+  /** big soft light on the floor under explosions (drawn additively, under cars) */
+  drawGroundLights(ctx) {
+    const gl = this.groundLights;
+    for (let i = 0; i < gl.length; i++) {
+      const g = gl[i];
+      const spr = this.makeGlow(g.color);
+      const sz = g.size * 2;
+      ctx.globalAlpha = clamp(g.life / g.max, 0, 1) * 0.42;
+      ctx.drawImage(spr, g.x - sz / 2, g.y - sz / 2, sz, sz);
+    }
+    ctx.globalAlpha = 1;
   },
 
   /* ---------- rendering (world transform must be applied) ---------- */

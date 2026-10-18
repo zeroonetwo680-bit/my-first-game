@@ -286,6 +286,46 @@ canvas#game {
 #name-input:focus { box-shadow: 0 0 12px rgba(53,240,255,0.4); border-color: var(--cyan); }
 
 /* high-score table */
+/* garage & difficulty */
+.garage { display: flex; align-items: stretch; gap: 10px; }
+.arrow-btn {
+  width: 44px; cursor: pointer; color: var(--cyan);
+  background: rgba(10, 20, 40, 0.55); border: 1px solid rgba(53, 240, 255, 0.45);
+  font-size: 24px; font-family: var(--hud-font); touch-action: manipulation;
+}
+.arrow-btn:hover { background: rgba(53, 240, 255, 0.15); box-shadow: 0 0 12px rgba(53,240,255,0.4); }
+.arrow-btn:active { transform: scale(0.92); }
+.car-card {
+  width: 250px; padding: 16px 14px 14px;
+  display: flex; flex-direction: column; align-items: center; gap: 7px;
+  background: rgba(8, 16, 32, 0.85); border: 1px solid rgba(53, 240, 255, 0.45);
+  clip-path: polygon(12px 0, 100% 0, calc(100% - 12px) 100%, 0 100%);
+  transition: box-shadow 0.15s;
+}
+.car-card:hover { box-shadow: 0 0 20px rgba(53, 240, 255, 0.25); }
+.car-card.locked { border-color: rgba(255, 184, 77, 0.55); }
+.car-card.locked #car-name { color: var(--amber); }
+#car-name { font-family: var(--hud-font); font-size: 17px; font-weight: 900; letter-spacing: 4px; color: #fff; text-shadow: 0 0 12px rgba(53,240,255,0.6); }
+#car-desc { font-size: 13px; color: var(--dim); text-align: center; min-height: 17px; letter-spacing: 0.5px; }
+#car-stats { font-size: 12.5px; color: var(--amber); letter-spacing: 2px; line-height: 1.6; font-weight: 600; }
+.btn.small-btn { font-size: 12px; padding: 8px 18px; letter-spacing: 2px; }
+.btn.small-btn.cant { opacity: 0.45; cursor: not-allowed; }
+#bank-label { font-family: var(--hud-font); font-size: 13px; font-weight: 700; letter-spacing: 3px; color: var(--amber); text-shadow: 0 0 10px rgba(255,184,77,0.4); }
+.diff-row { display: flex; gap: 8px; }
+.diff-btn {
+  font-family: var(--hud-font); font-size: 12px; font-weight: 700; letter-spacing: 2px;
+  color: var(--cyan); background: rgba(10, 20, 40, 0.55);
+  border: 1px solid rgba(53, 240, 255, 0.4); padding: 8px 18px; cursor: pointer;
+  opacity: 0.6; touch-action: manipulation;
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+.diff-btn:hover { opacity: 0.9; }
+.diff-btn.active {
+  opacity: 1; color: #061018; background: var(--cyan); border-color: var(--cyan);
+  box-shadow: 0 0 16px rgba(53, 240, 255, 0.55);
+}
+.diff-btn[data-diff="inferno"].active { background: var(--pink); border-color: var(--pink); box-shadow: 0 0 16px rgba(255,61,129,0.6); color: #fff; }
+
 .hs-block { width: 100%; max-width: 400px; }
 .hs-block h2 {
   font-family: var(--hud-font); font-size: 12px; letter-spacing: 5px; color: var(--dim);
@@ -358,6 +398,10 @@ canvas#game {
 #weapon-chip b { color: #e6d5ff; }
 
 @media (max-width: 760px) {
+  .car-card { width: 210px; padding: 12px 10px 10px; }
+  #car-name { font-size: 14px; }
+  .arrow-btn { width: 38px; font-size: 20px; }
+  .diff-btn { padding: 7px 13px; font-size: 11px; }
   #banner { font-size: 30px; letter-spacing: 6px; }
   .hud-left { width: 150px; }
   #score-value { font-size: 20px; }
