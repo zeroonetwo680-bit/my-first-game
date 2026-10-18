@@ -1,4 +1,15 @@
-# NEON WRECKAGE — Combat Racing Arena
+# My First Games
+
+Two polished browser games, zero dependencies:
+
+| Game | Path | Kind |
+|---|---|---|
+| 🏎️ **NEON WRECKAGE** | `/` (this root) | Combat racing arena — waves, boss, garage, PWA, Android APK |
+| 🧊 **BLOCK NOVA** | [`/block-nova`](block-nova/) | Neon block puzzle+ — streaks, power-ups, two modes |
+
+---
+
+## NEON WRECKAGE — Combat Racing Arena
 
 A polished, top-down **car combat racing game** for desktop and mobile browsers.
 Drift through a neon arena, machine-gun rival cars, lock rockets onto brutes,

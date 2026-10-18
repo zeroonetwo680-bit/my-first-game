@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>BLOCK NOVA — Neon Block Puzzle</title>
+<meta name="description" content="Drag neon blocks, blast rows and columns, chain combos, unleash bombs and hammers. A block puzzle with more power.">
+<meta name="theme-color" content="#04060f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='4' y='4' width='11' height='11' rx='2' fill='%2335f0ff'/%3E%3Crect x='17' y='4' width='11' height='11' rx='2' fill='%23ff3d81'/%3E%3Crect x='4' y='17' width='11' height='11' rx='2' fill='%23ffb84d'/%3E%3Crect x='17' y='17' width='11' height='11' rx='2' fill='%2358ff9b'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- ======================= IN-GAME HUD ======================= -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div id="bn-score-label">SCORE</div>
+      <div id="bn-score">0</div>
+      <div id="bn-best">BEST 0</div>
+    </div>
+    <div class="hud-mid">
+      <div id="mode-label">CLASSIC</div>
+      <div id="rush-timer" class="hidden"><i id="rush-fill"></i><b id="rush-secs">2:00</b></div>
+    </div>
+    <div class="hud-right">
+      <div id="bn-streak" class="hidden"><span id="streak-x">x2</span><em>STREAK</em></div>
+    </div>
+    <div class="hud-buttons">
+      <button id="bn-mute" class="icon-btn" aria-label="Sound">&#9834;</button>
+      <button id="bn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
+    </div>
+    <div id="powerbar">
+      <button id="pw-rotate" class="pw" aria-label="Rotate piece"><span class="ic">&#x21BB;</span><b id="pw-rot-n">3</b><i class="cd" id="cd-rotate"></i></button>
+      <button id="pw-bomb" class="pw" aria-label="Bomb"><span class="ic">&#xD83D;&#xDCA5;</span><b id="pw-bomb-n">1</b><i class="cd" id="cd-bomb"></i></button>
+      <button id="pw-hammer" class="pw" aria-label="Hammer"><span class="ic">&#xD83D;&#xDD28;</span><b id="pw-ham-n">1</b><i class="cd" id="cd-hammer"></i></button>
+    </div>
+  </div>
+
+  <div id="bn-banner"></div>
+  <div id="vignette"></div>
+
+  <!-- ======================= START SCREEN ======================= -->
+  <div id="bn-start" class="screen visible">
+    <div class="screen-inner">
+      <div class="logo-wrap">
+        <h1 class="logo bn-logo">BLOCK<span>NOVA</span></h1>
+        <p class="tagline">NEON BLOCK PUZZLE+</p>
+      </div>
+      <div class="mode-row">
+        <button id="btn-classic" class="btn primary big">CLASSIC</button>
+        <button id="btn-rush" class="btn big rush-btn">RUSH &#9201;&#xFE0F;</button>
+      </div>
+      <p class="hint">Drag blocks onto the 8&times;8 grid &bull; fill rows <b>or</b> columns to blast them<br>
+      <b>Double-tap a piece to rotate</b> &bull; bombs clear 3&times;3 &bull; hammers crush cells<br>
+      Chain streaks for huge multipliers &mdash; clear the whole board for +500!</p>
+      <div class="hs-cols">
+        <div class="hs-block">
+          <h2>CLASSIC TOP 5</h2>
+          <div id="hs-classic" class="hs-table"></div>
+        </div>
+        <div class="hs-block">
+          <h2>RUSH TOP 5</h2>
+          <div id="hs-rush" class="hs-table"></div>
+        </div>
+      </div>
+      <div id="bn-stats" class="lifetime"></div>
+    </div>
+  </div>
+
+  <!-- ======================= PAUSE ======================= -->
+  <div id="bn-pause" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm">PAUSED</h1>
+      <button id="bn-resume" class="btn primary big">RESUME</button>
+      <button id="bn-restart" class="btn">RESTART</button>
+      <button id="bn-quit" class="btn">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- ======================= GAME OVER ======================= -->
+  <div id="bn-over" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm wrecked" id="over-title">NO MOVES LEFT</h1>
+      <div id="bn-new-best" class="new-best hidden">&#9733; NEW PERSONAL BEST &#9733;</div>
+      <div class="stats-grid">
+        <div class="stat main"><label>SCORE</label><b id="ov-score">0</b></div>
+        <div class="stat"><label>LINES</label><b id="ov-lines">0</b></div>
+        <div class="stat"><label>MAX STREAK</label><b id="ov-streak">x1</b></div>
+        <div class="stat"><label>BEST</label><b id="ov-best">0</b></div>
+      </div>
+      <div class="hs-block">
+        <h2 id="ov-hs-title">TOP 5</h2>
+        <div id="ov-hs" class="hs-table"></div>
+      </div>
+      <button id="bn-again" class="btn primary big">PLAY AGAIN</button>
+      <button id="bn-menu" class="btn">MENU</button>
+      <p class="hint">R = instant restart</p>
+    </div>
+  </div>
+</div>
+
+<noscript><p style="color:#fff;font-family:sans-serif;padding:2em">This game requires JavaScript.</p></noscript>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/pieces.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
