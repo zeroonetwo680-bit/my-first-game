@@ -1,0 +1,188 @@
+/* ============================================================
+   NEON WRECKAGE — input: keyboard, mouse aim, touch joystick
+   ============================================================ */
+'use strict';
+
+const Input = {
+  keys: Object.create(null),
+  pressed: Object.create(null),
+
+  // mouse
+  mouse: { x: 0, y: 0, down: false, lastMove: -99 },
+
+  // touch joystick
+  stick: { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0 },
+  touch: { fire: false, boost: false, rocketPressed: false },
+  touchUsed: false,
+
+  el: {},
+
+  init(canvas) {
+    this.canvas = canvas;
+    this.el.stickZone = document.getElementById('stick-zone');
+    this.el.stick = document.getElementById('stick');
+    this.el.knob = document.getElementById('stick-knob');
+
+    /* ---------------- keyboard ---------------- */
+    window.addEventListener('keydown', (e) => {
+      if (e.target && e.target.tagName === 'INPUT') return;
+      const code = e.code;
+      if (!this.keys[code]) this.pressed[code] = true;
+      this.keys[code] = true;
+      if (['Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(code)) e.preventDefault();
+    });
+    window.addEventListener('keyup', (e) => { this.keys[e.code] = false; });
+    window.addEventListener('blur', () => { this.keys = Object.create(null); this.mouse.down = false; });
+
+    /* ---------------- mouse (desktop aim) ---------------- */
+    canvas.addEventListener('pointermove', (e) => {
+      if (e.pointerType === 'mouse') {
+        const r = canvas.getBoundingClientRect();
+        this.mouse.x = e.clientX - r.left;
+        this.mouse.y = e.clientY - r.top;
+        this.mouse.lastMove = performance.now() / 1000;
+      }
+    });
+    canvas.addEventListener('pointerdown', (e) => {
+      if (e.pointerType === 'mouse') {
+        if (e.button === 0) this.mouse.down = true;
+        const r = canvas.getBoundingClientRect();
+        this.mouse.x = e.clientX - r.left;
+        this.mouse.y = e.clientY - r.top;
+        this.mouse.lastMove = performance.now() / 1000;
+      } else if (e.pointerType === 'touch') {
+        this.touchUsed = true;
+      }
+    });
+    window.addEventListener('pointerup', (e) => { if (e.pointerType === 'mouse') this.mouse.down = false; });
+    canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
+    /* ---------------- touch joystick (left zone) ---------------- */
+    const zone = this.el.stickZone;
+    zone.addEventListener('pointerdown', (e) => {
+      if (e.pointerType !== 'touch') return;
+      if (this.stick.active) return;
+      this.stick.active = true;
+      this.stick.id = e.pointerId;
+      this.stick.ox = e.clientX;
+      this.stick.oy = e.clientY;
+      this.stick.dx = 0; this.stick.dy = 0;
+      this.el.stick.style.left = e.clientX + 'px';
+      this.el.stick.style.top = e.clientY + 'px';
+      this.el.stick.classList.remove('hidden');
+      this.updateKnob(0, 0);
+      zone.setPointerCapture(e.pointerId);
+      e.preventDefault();
+    });
+    zone.addEventListener('pointermove', (e) => {
+      if (!this.stick.active || e.pointerId !== this.stick.id) return;
+      const R = 58;
+      let dx = e.clientX - this.stick.ox;
+      let dy = e.clientY - this.stick.oy;
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx = (dx / d) * R; dy = (dy / d) * R; }
+      this.stick.dx = dx / R;
+      this.stick.dy = dy / R;
+      this.updateKnob(dx, dy);
+      e.preventDefault();
+    });
+    const endStick = (e) => {
+      if (e.pointerId !== this.stick.id) return;
+      this.stick.active = false;
+      this.stick.id = -1;
+      this.stick.dx = 0; this.stick.dy = 0;
+      this.el.stick.classList.add('hidden');
+    };
+    zone.addEventListener('pointerup', endStick);
+    zone.addEventListener('pointercancel', endStick);
+
+    /* ---------------- touch action buttons ---------------- */
+    this.bindBtn('btn-fire', 'fire');
+    this.bindBtn('btn-boost', 'boost');
+    const rk = document.getElementById('btn-rocket');
+    if (rk) {
+      rk.addEventListener('pointerdown', (e) => {
+        this.touch.rocketPressed = true;
+        rk.classList.add('pressed');
+        e.preventDefault();
+      });
+      const upRk = () => rk.classList.remove('pressed');
+      rk.addEventListener('pointerup', upRk);
+      rk.addEventListener('pointercancel', upRk);
+    }
+  },
+
+  bindBtn(id, prop) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.addEventListener('pointerdown', (e) => {
+      this.touch[prop] = true;
+      el.classList.add('pressed');
+      e.preventDefault();
+    });
+    const up = () => { this.touch[prop] = false; el.classList.remove('pressed'); };
+    el.addEventListener('pointerup', up);
+    el.addEventListener('pointercancel', up);
+    el.addEventListener('pointerleave', up);
+  },
+
+  updateKnob(dx, dy) {
+    this.el.knob.style.transform = `translate(${dx}px, ${dy}px)`;
+  },
+
+  /** steering: -1..1 ; throttle: -1..1 */
+  getDrive() {
+    let steer = 0, throttle = 0;
+    const k = this.keys;
+    if (k['KeyA'] || k['ArrowLeft']) steer -= 1;
+    if (k['KeyD'] || k['ArrowRight']) steer += 1;
+    if (k['KeyW'] || k['ArrowUp']) throttle += 1;
+    if (k['KeyS'] || k['ArrowDown']) throttle -= 1;
+    if (this.stick.active) {
+      const mag = Math.hypot(this.stick.dx, this.stick.dy);
+      if (mag > 0.22) {
+        // joystick direction maps to steering + throttle relative to car heading (set by game)
+        return { stick: { x: this.stick.dx, y: this.stick.dy } };
+      }
+      return { steer: 0, throttle: 0 };
+    }
+    return { steer, throttle };
+  },
+
+  getFire() {
+    return !!this.keys['Space'] || !!this.keys['KeyJ'] || this.mouse.down || this.touch.fire;
+  },
+
+  getBoost() {
+    return !!this.keys['ShiftLeft'] || !!this.keys['ShiftRight'] || !!this.keys['KeyK'] || this.touch.boost;
+  },
+
+  consumeRocket() {
+    if (this.keys['KeyE'] || this.keys['KeyR'] || this.touch.rocketPressed) {
+      this.keys['KeyE'] = false; this.keys['KeyR'] = false;
+      this.touch.rocketPressed = false;
+      return true;
+    }
+    return false;
+  },
+
+  consumePressed(code) {
+    if (this.pressed[code]) { this.pressed[code] = false; return true; }
+    return false;
+  },
+
+  endFrame() {
+    this.pressed = Object.create(null);
+    this.touch.rocketPressed = false;
+  },
+
+  /** should turret follow the mouse? (desktop: mouse moved in last 3s) */
+  mouseAiming() {
+    if (this.touchUsed && !matchMedia('(hover: hover)').matches) return false;
+    return performance.now() / 1000 - this.mouse.lastMove < 3;
+  },
+
+  showTouchUI(show) {
+    document.getElementById('touch-ui').classList.toggle('hidden', !show);
+  }
+};

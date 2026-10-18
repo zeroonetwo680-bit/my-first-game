@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>NEON WRECKAGE — Combat Racing Arena</title>
+<meta name="description" content="Top-down neon combat racing: drift, shoot, rocket and survive endless waves of rival cars.">
+<meta name="theme-color" content="#04060f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%2335f0ff' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ff3d81'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- ======================= IN-GAME HUD ======================= -->
+  <div id="hud" class="hidden">
+    <div class="hud-left">
+      <div class="bar hp"><div class="fill" id="hp-fill"></div><span id="hp-text">100</span><span class="bar-label">HULL</span></div>
+      <div class="bar boost"><div class="fill" id="boost-fill"></div><span class="bar-label">NITRO</span></div>
+      <div class="chip" id="rocket-chip">ROCKETS <b id="rocket-charges">2</b></div>
+    </div>
+    <div class="hud-center">
+      <div id="wave-label">WAVE 1</div>
+      <div id="enemies-label">4 HOSTILES</div>
+    </div>
+    <div class="hud-right">
+      <div id="score-label">SCORE</div>
+      <div id="score-value">0</div>
+      <div id="combo" class="hidden"><span id="combo-x">x2</span><em>COMBO</em><div id="combo-bar"><i id="combo-fill"></i></div></div>
+    </div>
+    <div class="hud-buttons">
+      <button id="btn-mute" class="icon-btn" aria-label="Toggle sound">&#9834;</button>
+      <button id="btn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
+    </div>
+  </div>
+
+  <div id="banner"></div>
+  <div id="hit-flash"></div>
+  <div id="vignette"></div>
+  <div id="scanlines"></div>
+
+  <!-- ======================= TOUCH CONTROLS ======================= -->
+  <div id="touch-ui" class="hidden">
+    <div id="stick-zone"></div>
+    <div id="stick" class="hidden"><div id="stick-knob"></div></div>
+    <div id="btn-fire" class="tbtn"><span>FIRE</span></div>
+    <div id="btn-rocket" class="tbtn small"><span>RKT</span></div>
+    <div id="btn-boost" class="tbtn small"><span>NOS</span></div>
+  </div>
+
+  <!-- ======================= START SCREEN ======================= -->
+  <div id="screen-start" class="screen visible">
+    <div class="screen-inner">
+      <div class="logo-wrap">
+        <h1 class="logo">NEON<span>WRECKAGE</span></h1>
+        <p class="tagline">COMBAT RACING ARENA</p>
+      </div>
+      <button id="btn-play" class="btn primary big">ENTER THE ARENA</button>
+      <div id="controls-hint" class="hint"></div>
+      <div class="hs-block">
+        <h2>TOP DRIVERS</h2>
+        <div id="start-highscores" class="hs-table"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ======================= PAUSE SCREEN ======================= -->
+  <div id="screen-pause" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm">PAUSED</h1>
+      <button id="btn-resume" class="btn primary big">RESUME</button>
+      <button id="btn-restart" class="btn">RESTART RUN</button>
+      <button id="btn-quit" class="btn">QUIT TO MENU</button>
+      <p class="hint">P / ESC to resume</p>
+    </div>
+  </div>
+
+  <!-- ======================= GAME OVER SCREEN ======================= -->
+  <div id="screen-over" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm wrecked">WRECKED</h1>
+      <div id="new-best" class="new-best hidden">&#9733; NEW PERSONAL BEST &#9733;</div>
+      <div class="stats-grid">
+        <div class="stat main"><label>SCORE</label><b id="stat-score">0</b></div>
+        <div class="stat"><label>KILLS</label><b id="stat-kills">0</b></div>
+        <div class="stat"><label>MAX COMBO</label><b id="stat-combo">x1</b></div>
+        <div class="stat"><label>WAVE</label><b id="stat-wave">1</b></div>
+        <div class="stat"><label>TIME</label><b id="stat-time">0:00</b></div>
+      </div>
+      <div id="save-row" class="save-row hidden">
+        <input id="name-input" maxlength="12" placeholder="YOUR NAME" autocomplete="off" spellcheck="false">
+        <button id="btn-save" class="btn">SAVE</button>
+      </div>
+      <div class="hs-block">
+        <h2>TOP DRIVERS</h2>
+        <div id="over-highscores" class="hs-table"></div>
+      </div>
+      <button id="btn-again" class="btn primary big">RACE AGAIN</button>
+      <button id="btn-menu" class="btn">MENU</button>
+      <p class="hint">R / ENTER for instant restart</p>
+    </div>
+  </div>
+</div>
+
+<noscript><p style="color:#fff;font-family:sans-serif;padding:2em">This game requires JavaScript.</p></noscript>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/input.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
