@@ -1,4 +1,4 @@
-name: Android APK
+name: Android APK (build on demand)
 
 on:
   workflow_dispatch: {}
