@@ -60,6 +60,11 @@ LB/LT/B nitro, RB/X rocket, Y swaps weapons, Start pauses, right stick aims.
   breakdown, and a persistent **local top-8 high-score table** (localStorage).
 - **Extra polish** — glowing nitro light trail, explosions that light up the
   arena floor, boss minion waves.
+- **16 achievements** — unlock by wrecking rivals, chaining combos, clearing
+  waves, slaying bosses, flawless streaks, rocket multi-kills and more, with
+  toast notifications and a progress grid on the start screen.
+- **Installable PWA** — service-worker app shell, fullscreen display, maskable
+  icon; plays offline after the first visit (bump `VERSION` in `sw.js` on deploy).
 - **Procedural audio** — engine pitch tied to speed, gunfire, explosions,
   skids, and a minimal synthwave loop, all synthesized in WebAudio.
 - **60 fps engineering** — pooled particles/bullets, pre-rendered glow sprites
@@ -69,14 +74,18 @@ LB/LT/B nitro, RB/X rocket, Y swaps weapons, Start pauses, right stick aims.
 ## Project layout
 
 ```
-index.html        markup: canvas, HUD, screens, touch controls
-css/style.css     neon theme, HUD, menus, animations
-js/core.js        math helpers, object pool, storage wrapper
-js/audio.js       procedural WebAudio SFX + music
-js/fx.js          particles, screen shake, floating text, decals
-js/input.js       keyboard, mouse aim, virtual joystick, buttons
-js/game.js        entities, AI, waves, collisions, rendering, states
-test/smoke.js     headless smoke test (node test/smoke.js)
+index.html              markup: canvas, HUD, screens, touch controls
+manifest.webmanifest    PWA manifest (installable, fullscreen)
+sw.js                   service worker — offline app shell
+css/style.css           neon theme, HUD, menus, animations
+js/core.js              math helpers, object pool, storage wrapper
+js/audio.js             procedural WebAudio SFX + music
+js/fx.js                particles, screen shake, floating text, decals
+js/achievements.js      16 achievements + toast notifications
+js/input.js             keyboard, mouse, touch, gamepad
+js/game.js              entities, AI, waves, collisions, rendering, states
+assets/                 PWA icons (192/512/maskable)
+test/smoke.js           headless smoke test (node test/smoke.js)
 ```
 
 ## Testing
@@ -84,4 +93,5 @@ test/smoke.js     headless smoke test (node test/smoke.js)
 The game logic is fully runnable headless — `node test/smoke.js` boots the
 game with stubbed browser APIs and a seeded RNG, simulates minutes of play
 (waves, boss fights, upgrades, shotgun/bomber/sniper, pickups, death,
-restart, pause, touch input) and asserts on game state (53 checks).
+restart, pause, touch input, garage, achievements) and asserts on game
+state (78 checks).

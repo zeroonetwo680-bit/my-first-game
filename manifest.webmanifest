@@ -1,0 +1,19 @@
+{
+  "name": "NEON WRECKAGE — Combat Racing Arena",
+  "short_name": "NeonWreck",
+  "description": "Top-down neon combat racing: drift, shoot, rocket and survive endless waves of rival cars.",
+  "id": "neon-wreckage",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "display_override": ["fullscreen", "standalone"],
+  "orientation": "any",
+  "background_color": "#04060f",
+  "theme_color": "#04060f",
+  "categories": ["games", "action"],
+  "icons": [
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

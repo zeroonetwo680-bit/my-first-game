@@ -221,6 +221,14 @@ const AudioSys = {
     this._tone('sawtooth', 165, 165, 0.5, 0.12, this.music);
   },
 
+  achieve() {
+    if (!this.ctx) return;
+    const self = this;
+    this._tone('triangle', 523, 523, 0.12, 0.14);
+    setTimeout(() => self._tone('triangle', 659, 659, 0.14, 0.14), 110);
+    setTimeout(() => self._tone('triangle', 784, 784, 0.22, 0.16), 230);
+  },
+
   bossHorn() {
     if (!this.ctx) return;
     this._tone('sawtooth', 48, 96, 1.2, 0.24, this.music);

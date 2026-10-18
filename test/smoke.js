@@ -22,6 +22,7 @@ function makeCtx() {
 const elements = {};
 function makeEl(id) {
   const classes = new Set();
+  const children = {};
   return {
     id, style: {}, textContent: '', value: '', offsetWidth: 100,
     classList: {
@@ -30,6 +31,7 @@ function makeEl(id) {
       toggle: (c, f) => { if (f === undefined) f = !classes.has(c); if (f) classes.add(c); else classes.delete(c); return f; },
       contains: c => classes.has(c)
     },
+    querySelector: sel => (children[sel] || (children[sel] = makeEl(id + ' ' + sel))),
     addEventListener() {}, focus() {}, blur() {},
     appendChild() {},
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 1280, height: 720 })
@@ -86,7 +88,7 @@ sandbox.addEventListener = () => {};
 sandbox.removeEventListener = () => {};
 vm.createContext(sandbox);
 
-for (const f of ['core.js', 'audio.js', 'fx.js', 'input.js', 'game.js']) {
+for (const f of ['core.js', 'audio.js', 'fx.js', 'achievements.js', 'input.js', 'game.js']) {
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
   vm.runInContext(code, sandbox, { filename: f });
 }
@@ -412,6 +414,64 @@ Input.pollPad();
 check('gamepad A button fires', 'this.__padFire', v => v === true);
 check('gamepad left stick drives', 'this.__padDrive', v => v === true);
 check('gamepad RB fires rocket', 'this.__padRocketWorks', v => v === true);
+
+console.log('--- achievements: unlock paths, persistence, toasts ---');
+run(`
+// fresh slate (earlier sections already earned some)
+Achievements.unlocked = {};
+Achievements.stats = { kills: 0, bosses: 0, bombed: 0 };
+Achievements.queue.length = 0;
+localStorage.removeItem('nw.ach');
+localStorage.removeItem('nw.stats');
+Game.startRun();
+this.__before = Achievements.has('first-blood');
+Game.spawnEnemy('rammer', Game.player.x + 150, Game.player.y);
+for (const e of [...Game.enemies]) damageEnemy(e, 999, e.x, e.y);
+this.__after = Achievements.has('first-blood');
+this.__kills = Achievements.stats.kills;
+Game.spawnEnemy('boss', Game.player.x + 420, Game.player.y);
+const bossE = Game.enemies.find(e => e.type === 'boss');
+if (bossE) damageEnemy(bossE, 999999, bossE.x, bossE.y);
+`);
+check('first-blood locked before any kill', 'this.__before', v => v === false);
+check('first-blood unlocked after kill', 'this.__after', v => v === true);
+check('total kill counter increments', 'this.__kills', n => n >= 1);
+check('boss kill unlocks WARLORD SLAYER', 'Achievements.has("boss-1")', v => v === true);
+run(`
+Game.startRun();
+Game.combo = 8;
+Game.registerKill({ def: { score: 10 }, x: Game.player.x, y: Game.player.y });
+`);
+check('x8 combo achievement', 'Achievements.has("combo-8")', v => v === true);
+run(`
+Game.startRun();
+Game.damageSinceWave = false;
+Game.flawlessWaves = 4;
+Game.wave = 5;
+Game.enemies.length = 0; Game.spawnQueue.length = 0; Game.portals.length = 0;
+Game.waveCleared();
+`);
+check('flawless-5 streak achievement', 'Achievements.has("flawless-5")', v => v === true);
+run(`
+Game.score = 26000;
+Game.gameOver();
+`);
+check('score-25k on game over', 'Achievements.has("score-25k")', v => v === true);
+run(`
+Game.startRun();
+const rp = Game.player;
+for (let k = 0; k < 3; k++) Game.spawnEnemy('rammer', rp.x + 92 + k * 16, rp.y);
+const r = Game.rockets.obtain();
+if (r) { r.active = true; r.x = rp.x + 62; r.y = rp.y; r.angle = 0; r.speed = 500; r.life = 2; r.target = null; r.trailT = 0; Game.explodeRocket(r); }
+`);
+check('rocket multi-kill ROCKET ACE', 'Achievements.has("rocket-ace")', v => v === true);
+run(`
+if (!Achievements.has('wave-20')) Achievements.unlock('wave-20');
+for (let i = 0; i < 20; i++) Achievements.update(3);
+`);
+check('toast queue drains cleanly', 'Achievements.queue.length', n => n === 0);
+check('achievements persisted to storage', 'JSON.parse(localStorage.getItem("nw.ach"))["first-blood"] > 0', v => v === true);
+check('stats persisted to storage', 'JSON.parse(localStorage.getItem("nw.stats")).kills >= 1', v => v === true);
 
 console.log('--- death & game over ---');
 run(`

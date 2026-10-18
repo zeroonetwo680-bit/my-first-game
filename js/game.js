@@ -371,6 +371,8 @@ const Game = {
     this.offered = [];
     this.coinsEarned = 0;
     this.trail.length = 0;
+    this.damageSinceWave = false;
+    this.flawlessWaves = 0;
   },
 
   genPillars() {
@@ -396,6 +398,7 @@ const Game = {
     setScreen('start');
     this.loadScores();
     this.syncGarage();
+    Achievements.renderGrid();
     document.getElementById('hud').classList.add('hidden');
     Input.showTouchUI(false);
     // attract mode cars
@@ -817,6 +820,7 @@ const Game = {
   startWave(n) {
     this.wave = n;
     this.betweenWaves = false;
+    this.damageSinceWave = false;
     const list = [];
     if (n % 5 === 0) {
       // ===== boss wave =====
@@ -855,11 +859,13 @@ const Game = {
     this.score += bonus;
     FX.text(this.player.x, this.player.y - 30, 'WAVE CLEAR  +' + bonus, '#35f0ff', 20);
     this.player.hp = Math.min(this.player.maxHp, this.player.hp + 8);
+    if (!this.damageSinceWave) this.flawlessWaves++;
     banner('WAVE ' + this.wave + ' CLEARED');
     AudioSys.pickup();
     this.betweenWaves = true;
     this.betweenTimer = 2.0;
     this.pendingUpgrades = true;
+    Achievements.onWave(this.wave, this.flawlessWaves);
   },
 
   /* ---------------- garage & difficulty ---------------- */
@@ -900,6 +906,7 @@ const Game = {
     this.carId = id;
     store.set('nw.car', id);
     this.syncGarage();
+    Achievements.checkGarage();
     return true;
   },
 
@@ -1393,6 +1400,7 @@ const Game = {
 
   explodeRocket(r) {
     r.active = false;
+    const killsBefore = this.kills;
     const R = 135;
     for (const e of this.enemies) {
       const d = Math.hypot(e.x - r.x, e.y - r.y);
@@ -1408,6 +1416,7 @@ const Game = {
     AudioSys.explosion(true);
     FX.addShake(9);
     this.hitStop = Math.max(this.hitStop, 0.05);
+    Achievements.onMultiRocket(this.kills - killsBefore);
   },
 
   /* ---------------- pickups ---------------- */
@@ -1494,6 +1503,7 @@ const Game = {
         const a = Math.atan2(P.y - e.y, P.x - e.x);
         P.vx += Math.cos(a) * 260;
         P.vy += Math.sin(a) * 260;
+        if (!P.dead) Achievements.onBombed();
       }
     }
   },
@@ -1511,6 +1521,7 @@ const Game = {
     this.score += gained;
     FX.text(e.x, e.y, '+' + gained + (mult > 1 ? '  x' + mult : ''), mult > 1 ? '#ffd24d' : '#9feeff', mult > 1 ? 18 : 15);
     this.dropPickup(e.x, e.y);
+    Achievements.onKill(e);
   },
 
   die() {
@@ -1539,6 +1550,7 @@ const Game = {
     const q = this.qualifies();
     document.getElementById('save-row').classList.toggle('hidden', !q);
     document.getElementById('new-best').classList.toggle('hidden', !this.isPersonalBest());
+    Achievements.onGameOver(this.score);
     this.bank += this.coinsEarned;
     store.set('nw.bank', this.bank);
     document.getElementById('stat-coins').textContent = '+' + fmtNum(this.coinsEarned);
@@ -2106,6 +2118,7 @@ function killEnemy(e) {
   Game.hitStop = Math.max(Game.hitStop, big ? 0.055 : 0.028);
   Game.registerKill(e);
   if (e.type === 'bomber') Game.detonateBomber(e);
+  if (e.type === 'boss') Achievements.onBoss();
   if (e.type === 'boss') {
     // chained boss detonation + loot + bonus
     FX.explosion(e.x + rand(-36, 36), e.y + rand(-36, 36), '#ffb84d', 1.6, false);
@@ -2143,6 +2156,8 @@ function damagePlayer(d, sx, sy) {
   }
   p.hp -= d;
   p.flash = 1;
+  Game.damageSinceWave = true;
+  Game.flawlessWaves = 0;
   FX.addShake(clamp(d * 0.4, 2, 7));
   FX.addFlash(0.5);
   AudioSys.hit();
@@ -2260,6 +2275,26 @@ function buildAllSprites() {
   }
 }
 
+function wireInstallBanner() {
+  const show = () => document.getElementById('install-banner').classList.remove('hidden');
+  let deferred = null;
+  window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferred = e;
+    if (!store.get('nw.installDismissed', false)) show();
+  });
+  const btn = document.getElementById('btn-install');
+  const x = document.getElementById('btn-install-x');
+  if (btn) btn.addEventListener('click', () => {
+    document.getElementById('install-banner').classList.add('hidden');
+    if (deferred) { deferred.prompt(); deferred = null; }
+  });
+  if (x) x.addEventListener('click', () => {
+    document.getElementById('install-banner').classList.add('hidden');
+    store.set('nw.installDismissed', true);
+  });
+}
+
 function wireUI() {
   const on = (id, fn) => {
     const el = document.getElementById(id);
@@ -2350,6 +2385,7 @@ function frame(now) {
   Input.endFrame();
   Game.render();
   Game.updateHUD();
+  Achievements.update(dt);
 }
 
 function boot() {
@@ -2358,6 +2394,8 @@ function boot() {
   Game.init();
   Input.init(canvas);
   wireUI();
+  wireInstallBanner();
+  Achievements.init();
   Game.enterMenu();
 
   // audio unlock on first gesture

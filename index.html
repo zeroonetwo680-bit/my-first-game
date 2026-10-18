@@ -7,6 +7,12 @@
 <meta name="description" content="Top-down neon combat racing: drift, shoot, rocket and survive endless waves of rival cars.">
 <meta name="theme-color" content="#04060f">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ccircle cx='16' cy='16' r='13' fill='none' stroke='%2335f0ff' stroke-width='3'/%3E%3Ccircle cx='16' cy='16' r='5' fill='%23ff3d81'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="assets/icon-192.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="NeonWreck">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
@@ -84,8 +90,18 @@
         <h2>TOP DRIVERS<span id="hs-diff-tag-start"></span></h2>
         <div id="start-highscores" class="hs-table"></div>
       </div>
+      <div class="hs-block">
+        <h2>ACHIEVEMENTS <span id="ach-count"></span></h2>
+        <div id="ach-grid" class="ach-grid"></div>
+      </div>
     </div>
   </div>
+
+  <!-- achievement toast -->
+  <div id="ach-toast"><span class="ic">&#127942;</span><div class="tx"><b>ACHIEVEMENT UNLOCKED</b><em id="ach-name"></em></div></div>
+
+  <!-- PWA install banner -->
+  <div id="install-banner" class="hidden"><span>&#128248; Install NEON WRECKAGE for fullscreen play</span><button id="btn-install" class="btn small-btn">INSTALL</button><button id="btn-install-x" aria-label="Dismiss">&times;</button></div>
 
   <!-- ======================= PAUSE SCREEN ======================= -->
   <div id="screen-pause" class="screen">
@@ -140,7 +156,15 @@
 <script src="js/core.js"></script>
 <script src="js/audio.js"></script>
 <script src="js/fx.js"></script>
+<script src="js/achievements.js"></script>
 <script src="js/input.js"></script>
 <script src="js/game.js"></script>
+<script>
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('./sw.js').catch(function () {});
+  });
+}
+</script>
 </body>
 </html>
