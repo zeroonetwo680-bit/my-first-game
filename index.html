@@ -41,9 +41,11 @@
       <div id="combo" class="hidden"><span id="combo-x">x2</span><em>COMBO</em><div id="combo-bar"><i id="combo-fill"></i></div></div>
     </div>
     <div class="hud-buttons">
+      <button id="btn-full" class="icon-btn" aria-label="Fullscreen">&#x26F6;</button>
       <button id="btn-mute" class="icon-btn" aria-label="Toggle sound">&#9834;</button>
       <button id="btn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
     </div>
+    <div id="offline-badge" class="hidden">&#9889; OFFLINE &mdash; PROGRESS SAVES LOCALLY</div>
   </div>
 
   <div id="banner"></div>
@@ -103,6 +105,9 @@
   <!-- PWA install banner -->
   <div id="install-banner" class="hidden"><span>&#128248; Install NEON WRECKAGE for fullscreen play</span><button id="btn-install" class="btn small-btn">INSTALL</button><button id="btn-install-x" aria-label="Dismiss">&times;</button></div>
 
+  <!-- service worker update banner -->
+  <div id="update-banner" class="hidden"><span>&#9889; New version ready</span><button id="btn-update" class="btn small-btn">REFRESH</button></div>
+
   <!-- ======================= PAUSE SCREEN ======================= -->
   <div id="screen-pause" class="screen">
     <div class="screen-inner">
@@ -158,11 +163,14 @@
 <script src="js/fx.js"></script>
 <script src="js/achievements.js"></script>
 <script src="js/input.js"></script>
+<script src="js/platform.js"></script>
 <script src="js/game.js"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {
-    navigator.serviceWorker.register('./sw.js').catch(function () {});
+    navigator.serviceWorker.register('./sw.js').then(function (reg) {
+      if (window.Platform && Platform.swReady) Platform.swReady(reg);
+    }).catch(function () {});
   });
 }
 </script>

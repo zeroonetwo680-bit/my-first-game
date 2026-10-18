@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v5';
+const VERSION = 'nw-v6';
 const CORE = [
   './',
   './index.html',
@@ -14,6 +14,7 @@ const CORE = [
   './js/fx.js',
   './js/achievements.js',
   './js/input.js',
+  './js/platform.js',
   './js/game.js',
   './assets/icon-192.png',
   './assets/icon-512.png',
@@ -26,6 +27,10 @@ self.addEventListener('install', (e) => {
       .then((c) => c.addAll(CORE))
       .then(() => self.skipWaiting())
   );
+});
+
+self.addEventListener('message', (e) => {
+  if (e.data === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (e) => {

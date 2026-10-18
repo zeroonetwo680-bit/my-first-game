@@ -227,6 +227,14 @@ const PLAYER_STATS = { accel: 640, maxF: 430, turn: 3.35, grip: 8.5 };
 const BOOST_STATS = { accel: 960, maxF: 650, turn: 2.9, grip: 7.0 };
 const _pStats = { accel: 0, maxF: 0, turn: 0, grip: 0 };
 
+/* ---------- adaptive quality: keeps 60fps on mid-range Android ---------- */
+const QLEVELS = [
+  { dprCap: 2.0,  spawn: 1.0,  scan: true },
+  { dprCap: 1.5,  spawn: 0.7,  scan: true },
+  { dprCap: 1.2,  spawn: 0.5,  scan: false },
+  { dprCap: 1.0,  spawn: 0.32, scan: false }
+];
+
 /* ---------- roguelite upgrades: offered 1-of-3 after every cleared wave ---------- */
 const UPGRADES = [
   { id: 'dmg',    icon: '\uD83D\uDCA5', name: 'HEAVY ROUNDS',   desc: '+25% gun damage',                 max: 6, apply: p => { p.mods.dmg += 0.25; } },
@@ -300,6 +308,7 @@ const Game = {
   unlocked: store.get('nw.unlocked', { interceptor: true }),
   coinsEarned: 0,
   trail: [],
+  qual: { level: 0, ema: 1 / 60, timer: 0, cool: 2, goodTimer: 0 },
 
   /* ---------------- init ---------------- */
   init() {
@@ -317,9 +326,21 @@ const Game = {
   resize() {
     vw = window.innerWidth;
     vh = window.innerHeight;
-    dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const cap = QLEVELS[this.qual.level].dprCap;
+    dpr = Math.min(window.devicePixelRatio || 1, 2, cap);
     canvas.width = Math.ceil(vw * dpr);
     canvas.height = Math.ceil(vh * dpr);
+  },
+
+  applyQuality(level) {
+    const q = this.qual;
+    q.level = clamp(level, 0, QLEVELS.length - 1);
+    q.cool = 3;
+    q.goodTimer = 0;
+    FX.spawnScale = QLEVELS[q.level].spawn;
+    const sc = document.getElementById('scanlines');
+    if (sc) sc.style.display = QLEVELS[q.level].scan ? '' : 'none';
+    this.resize();
   },
 
   /* ---------------- world setup ---------------- */
@@ -395,6 +416,8 @@ const Game = {
   enterMenu() {
     this.resetWorld();
     this.state = 'menu';
+    Platform.keepAwake(false);
+    Platform.navPushed = false;
     setScreen('start');
     this.loadScores();
     this.syncGarage();
@@ -422,6 +445,8 @@ const Game = {
     AudioSys.init(); AudioSys.resume(); AudioSys.startMusic();
     this.resetWorld();
     this.state = 'playing';
+    Platform.pushNav();
+    Platform.keepAwake(true);
     setScreen(null);
     document.getElementById('hud').classList.remove('hidden');
     Input.showTouchUI(IS_TOUCH);
@@ -434,10 +459,12 @@ const Game = {
     if (this.state === 'playing') {
       this.state = 'paused';
       setScreen('pause');
+      Platform.keepAwake(false);
       AudioSys.engine(0, false, false);
       AudioSys.skid(0);
     } else if (this.state === 'paused') {
       this.state = 'playing';
+      Platform.keepAwake(true);
       setScreen(null);
     }
   },
@@ -1457,6 +1484,7 @@ const Game = {
     FX.glowBurst(pk.x, pk.y, def.color, 10, 220);
     FX.ring(pk.x, pk.y, def.color, 20, 0.3);
     AudioSys.pickup();
+    Platform.vibrate(8);
   },
 
   dropPickup(x, y) {
@@ -1533,6 +1561,7 @@ const Game = {
     FX.explosion(p.x, p.y, '#35f0ff', 2.2, true);
     FX.explosion(p.x + rand(-20, 20), p.y + rand(-20, 20), '#ff9a3d', 1.4, false);
     AudioSys.explosion(true);
+    Platform.vibrate([90, 60, 90]);
     FX.addShake(18);
     this.hitStop = 0.09;
     this.deathTimer = 1.5;
@@ -1543,6 +1572,7 @@ const Game = {
   gameOver() {
     this.state = 'over';
     this.timeScale = 1;
+    Platform.keepAwake(false);
     Input.showTouchUI(false);
     document.getElementById('hud').classList.add('hidden');
     document.getElementById('name-input').value = store.get('nw.name', 'PLAYER');
@@ -2115,6 +2145,7 @@ function killEnemy(e) {
   FX.explosion(e.x, e.y, e.def.glow, big ? 1.7 : e.type === 'inter' ? 1.05 : 1.25, true);
   FX.debris(e.x, e.y, e.def.color, big ? 10 : 6);
   AudioSys.explosion(big);
+  Platform.vibrate(e.type === 'boss' ? [40, 50, 60] : 14);
   Game.hitStop = Math.max(Game.hitStop, big ? 0.055 : 0.028);
   Game.registerKill(e);
   if (e.type === 'bomber') Game.detonateBomber(e);
@@ -2156,6 +2187,7 @@ function damagePlayer(d, sx, sy) {
   }
   p.hp -= d;
   p.flash = 1;
+  Platform.vibrate(30);
   Game.damageSinceWave = true;
   Game.flawlessWaves = 0;
   FX.addShake(clamp(d * 0.4, 2, 7));
@@ -2316,6 +2348,7 @@ function wireUI() {
   }
   on('btn-pause', () => { if (Game.state === 'playing' || Game.state === 'paused') Game.togglePause(); });
   on('btn-mute', () => Game.toggleMute());
+  on('btn-update', () => Platform.applyUpdate());
 
   const nameInput = document.getElementById('name-input');
   nameInput.addEventListener('keydown', (e) => {
@@ -2341,9 +2374,31 @@ function frame(now) {
   let dt = (now - lastT) / 1000;
   lastT = now;
   if (dt > 0.1) dt = 0.1;
+  if (dt < 0) dt = 0; // rAF timestamps can jump backward after mobile sleep/resume
 
   Input.pollPad();
   if (Input.consumePressed('KeyM')) Game.toggleMute();
+
+  // ----- adaptive quality governor -----
+  {
+    const q = Game.qual;
+    if (q.cool > 0) q.cool -= dt;
+    if (Game.state === 'playing') {
+      q.ema = q.ema * 0.94 + dt * 0.06;
+      q.timer += dt;
+      if (q.timer >= 2 && q.cool <= 0) {
+        if (q.ema > 0.021 && q.level < QLEVELS.length - 1) {
+          Game.applyQuality(q.level + 1);
+        } else if (q.ema < 0.018 && q.level > 0) { // healthy 60fps (16.6ms) earns quality back
+          q.goodTimer += 2;
+          if (q.goodTimer >= 4) Game.applyQuality(q.level - 1);
+        } else {
+          q.goodTimer = 0;
+        }
+        q.timer = 0;
+      }
+    }
+  }
 
   switch (Game.state) {
     case 'menu':
@@ -2396,6 +2451,7 @@ function boot() {
   wireUI();
   wireInstallBanner();
   Achievements.init();
+  Platform.init();
   Game.enterMenu();
 
   // audio unlock on first gesture

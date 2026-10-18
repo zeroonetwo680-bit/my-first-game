@@ -15,6 +15,7 @@ const FX = {
 
   glowCache: {},
   groundLights: [],
+  spawnScale: 1,
   shake: 0, shakeX: 0, shakeY: 0,
   flash: 0,
 
@@ -32,6 +33,13 @@ const FX = {
     g.fillRect(0, 0, 64, 64);
     this.glowCache[color] = c;
     return c;
+  },
+
+  /** fractional particle-count scaling for adaptive quality */
+  scaledCount(n) {
+    const v = n * this.spawnScale;
+    const f = Math.floor(v);
+    return f + (Math.random() < v - f ? 1 : 0);
   },
 
   /* ---------- emitters ---------- */
@@ -52,7 +60,7 @@ const FX = {
   },
 
   sparks(x, y, color, n, speed, spread, baseAngle) {
-    n = n || 8;
+    n = this.scaledCount(n || 8);
     for (let i = 0; i < n; i++) {
       const a = baseAngle !== undefined ? baseAngle + rand(-spread || -1, spread || 1) : rand(TAU);
       const s = rand(speed * 0.4, speed);
@@ -65,6 +73,7 @@ const FX = {
   },
 
   smoke(x, y, n, tint) {
+    n = this.scaledCount(n || 1);
     for (let i = 0; i < n; i++) {
       this.emit({
         x: x + rand(-4, 4), y: y + rand(-4, 4),
@@ -76,6 +85,7 @@ const FX = {
   },
 
   glowBurst(x, y, color, n, speed) {
+    n = this.scaledCount(n || 1);
     for (let i = 0; i < n; i++) {
       const a = rand(TAU);
       const s = rand(speed * 0.3, speed);
@@ -91,6 +101,7 @@ const FX = {
   },
 
   debris(x, y, color, n) {
+    n = this.scaledCount(n || 1);
     for (let i = 0; i < n; i++) {
       const a = rand(TAU);
       const s = rand(60, 260);
@@ -108,11 +119,12 @@ const FX = {
     if (this.groundLights.length > 10) this.groundLights.shift();
     this.emit({ x, y, life: 0.14, size: 26 * scale, color: '#ffffff', kind: 'glow', grow: 240 * scale });
     this.ring(x, y, color, 24 * scale, 0.32);
-    this.sparks(x, y, color, Math.round(16 * scale), 420 * scale);
-    this.sparks(x, y, '#ffd24d', Math.round(10 * scale), 300 * scale);
-    this.debris(x, y, color, Math.round(6 * scale));
-    this.smoke(x, y, Math.round(7 * scale));
-    this.glowBurst(x, y, color, Math.round(8 * scale), 220 * scale);
+    const sc = this.spawnScale;
+    this.sparks(x, y, color, Math.round(16 * scale * sc), 420 * scale);
+    this.sparks(x, y, '#ffd24d', Math.round(10 * scale * sc), 300 * scale);
+    this.debris(x, y, color, Math.round(6 * scale * sc));
+    this.smoke(x, y, Math.round(7 * scale * sc));
+    this.glowBurst(x, y, color, Math.round(8 * scale * sc), 220 * scale);
     this.addShake(5 * scale);
     if (decal && Game.decals) Game.decals.scorch(x, y, 16 * scale);
   },

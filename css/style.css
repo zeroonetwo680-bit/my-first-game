@@ -380,6 +380,26 @@ canvas#game {
 #ach-toast .tx b { display: block; font-family: var(--hud-font); font-size: 9px; letter-spacing: 2px; color: var(--amber); }
 #ach-toast .tx em { font-style: normal; font-family: var(--hud-font); font-size: 14px; font-weight: 700; letter-spacing: 1px; color: #fff; }
 
+/* offline badge */
+#offline-badge {
+  position: absolute; left: 50%; bottom: calc(10px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  z-index: 10; pointer-events: none;
+  font-family: var(--hud-font); font-size: 10px; font-weight: 700; letter-spacing: 2px;
+  color: var(--amber); padding: 5px 14px;
+  background: rgba(20, 14, 4, 0.8); border: 1px solid rgba(255, 184, 77, 0.5);
+  clip-path: polygon(8px 0, 100% 0, calc(100% - 8px) 100%, 0 100%);
+}
+
+/* service worker update banner */
+#update-banner {
+  position: absolute; left: 50%; top: calc(16px + env(safe-area-inset-top)); transform: translateX(-50%);
+  z-index: 30; display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px 10px 18px;
+  background: rgba(10, 16, 30, 0.95); border: 1px solid rgba(255, 184, 77, 0.6);
+  box-shadow: 0 0 24px rgba(255, 184, 77, 0.3);
+  font-size: 13px; color: var(--text);
+}
+
 /* install banner */
 #install-banner {
   position: absolute; left: 50%; bottom: calc(18px + env(safe-area-inset-bottom)); transform: translateX(-50%);

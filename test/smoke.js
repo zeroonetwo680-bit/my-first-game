@@ -84,11 +84,20 @@ sandbox.Math = Object.create(Math);
 sandbox.Math.random = mulberry32(20260108);
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
-sandbox.addEventListener = () => {};
+sandbox.__ls = Object.create(null);
+sandbox.addEventListener = (t, fn) => { (sandbox.__ls[t] = sandbox.__ls[t] || []).push(fn); };
 sandbox.removeEventListener = () => {};
+sandbox.history = { pushState() {}, replaceState() {} };
+sandbox.__vibes = [];
+sandbox.navigator.vibrate = (pat) => { sandbox.__vibes.push(pat); return true; };
+sandbox.navigator.wakeLock = { request: async () => ({ released: false, release: async () => {} }) };
+sandbox.navigator.onLine = true;
+sandbox.location = { reload() {} };
+sandbox.document.fullscreenElement = null;
+sandbox.document.documentElement = Object.assign(makeEl('html'), { requestFullscreen: () => undefined });
 vm.createContext(sandbox);
 
-for (const f of ['core.js', 'audio.js', 'fx.js', 'achievements.js', 'input.js', 'game.js']) {
+for (const f of ['core.js', 'audio.js', 'fx.js', 'achievements.js', 'input.js', 'platform.js', 'game.js']) {
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
   vm.runInContext(code, sandbox, { filename: f });
 }
@@ -472,6 +481,77 @@ for (let i = 0; i < 20; i++) Achievements.update(3);
 check('toast queue drains cleanly', 'Achievements.queue.length', n => n === 0);
 check('achievements persisted to storage', 'JSON.parse(localStorage.getItem("nw.ach"))["first-blood"] > 0', v => v === true);
 check('stats persisted to storage', 'JSON.parse(localStorage.getItem("nw.stats")).kills >= 1', v => v === true);
+
+console.log('--- platform: haptics, offline badge, back button, fullscreen ---');
+run(`
+this.__vibBefore = __vibes.length;
+Platform.vibrate(25);
+this.__vibAfter = __vibes.length;
+Game.startRun();
+Platform.setOnline(false);
+this.__badgeShown = !document.getElementById('offline-badge').classList.contains('hidden');
+Platform.setOnline(true);
+this.__badgeHidden = document.getElementById('offline-badge').classList.contains('hidden');
+`);
+check('haptic fired manually', 'this.__vibAfter > this.__vibBefore', v => v === true);
+check('offline badge appears when offline', 'this.__badgeShown', v => v === true);
+check('offline badge hides when online', 'this.__badgeHidden', v => v === true);
+run(`
+Game.startRun();
+this.__vibBefore2 = __vibes.length;
+damagePlayer(6, Game.player.x, Game.player.y);
+this.__vibAfter2 = __vibes.length;
+__ls['popstate'][0]({ state: { nw: 1 } });
+`);
+check('damage triggers haptic feedback', 'this.__vibAfter2 > this.__vibBefore2', v => v === true);
+check('android back pauses the game', 'Game.state', s2 => s2 === 'paused');
+run(`
+__ls['popstate'][0]({ state: { nw: 1 } });
+`);
+check('back while paused quits to menu', 'Game.state', s2 => s2 === 'menu');
+run(`
+Game.startRun();
+Platform.toggleFullscreen();
+this.__wake = !!Platform.wakeLock;
+Game.togglePause();
+this.__wakeReleased = !Platform.wakeLock;
+Game.enterMenu();
+`);
+check('wake lock held while playing', 'this.__wake', v => v === true);
+check('wake lock released on pause', 'this.__wakeReleased', v => v === true);
+
+console.log('--- adaptive quality: drops under load, restores when fast ---');
+run(`
+Game.startRun();
+Game.applyQuality(0);
+const t0 = 2100000;
+let t = t0;
+for (let i = 0; i < 700; i++) {   // ~23s of 30fps frames
+  t += 33.3;
+  if (Game.state === 'upgrade') Game.chooseUpgrade(0);
+  if (Game.player.dead) { Game.player.dead = false; Game.player.hp = 120; }
+  if (Game.state === 'over') Game.startRun();
+  __frame(t);
+  Input.endFrame();
+  Input.keys['KeyW'] = true;
+}
+`);
+check('quality stepped down under slow frames', 'Game.qual.level', n => n >= 2);
+check('particle spawn scaled down', 'FX.spawnScale', v => v < 0.6);
+check('scanlines disabled at low quality', 'document.getElementById("scanlines").style.display === "none"', v => v === true);
+run(`
+let t2 = 2300000;
+for (let i = 0; i < 2000; i++) {  // ~33s of healthy 60fps frames
+  t2 += 16.6;
+  if (Game.state === 'upgrade') Game.chooseUpgrade(0);
+  if (Game.player.dead) { Game.player.dead = false; Game.player.hp = 120; }
+  if (Game.state === 'over') Game.startRun();
+  __frame(t2);
+  Input.endFrame();
+}
+`);
+check('quality restored when frames are fast', 'Game.qual.level', n => n === 0);
+check('spawn scale back to full', 'FX.spawnScale', v => v === 1);
 
 console.log('--- death & game over ---');
 run(`

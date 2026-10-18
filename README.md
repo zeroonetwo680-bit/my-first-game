@@ -64,7 +64,15 @@ LB/LT/B nitro, RB/X rocket, Y swaps weapons, Start pauses, right stick aims.
   waves, slaying bosses, flawless streaks, rocket multi-kills and more, with
   toast notifications and a progress grid on the start screen.
 - **Installable PWA** — service-worker app shell, fullscreen display, maskable
-  icon; plays offline after the first visit (bump `VERSION` in `sw.js` on deploy).
+  icon; plays fully offline after the first visit (bump `VERSION` in `sw.js`
+  on deploy), with an in-game offline badge and a "new version ready"
+  refresh banner when a deploy lands.
+- **First-class Android support** — haptic feedback on hits/kills/explosions,
+  screen wake-lock while racing, fullscreen toggle, adaptive quality governor
+  that drops DPR/particles/scanlines on slow devices and restores them when
+  frames are fast, and back-gesture handling that pauses instead of exiting.
+- **Robust frame loop** — negative-deltaTime guard (rAF timestamps can jump
+  backward after mobile sleep/resume) and a 100ms spike clamp.
 - **Procedural audio** — engine pitch tied to speed, gunfire, explosions,
   skids, and a minimal synthwave loop, all synthesized in WebAudio.
 - **60 fps engineering** — pooled particles/bullets, pre-rendered glow sprites
@@ -83,6 +91,7 @@ js/audio.js             procedural WebAudio SFX + music
 js/fx.js                particles, screen shake, floating text, decals
 js/achievements.js      16 achievements + toast notifications
 js/input.js             keyboard, mouse, touch, gamepad
+js/platform.js          haptics, wake lock, fullscreen, offline, SW updates
 js/game.js              entities, AI, waves, collisions, rendering, states
 assets/                 PWA icons (192/512/maskable)
 test/smoke.js           headless smoke test (node test/smoke.js)
@@ -93,5 +102,6 @@ test/smoke.js           headless smoke test (node test/smoke.js)
 The game logic is fully runnable headless — `node test/smoke.js` boots the
 game with stubbed browser APIs and a seeded RNG, simulates minutes of play
 (waves, boss fights, upgrades, shotgun/bomber/sniper, pickups, death,
-restart, pause, touch input, garage, achievements) and asserts on game
-state (78 checks).
+restart, pause, touch input, garage, achievements, haptics, back-button,
+offline badge and the adaptive quality governor) and asserts on game
+state (91 checks).
