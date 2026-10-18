@@ -1,0 +1,6 @@
+# Capacitor / local APK build artifacts
+www/
+android/
+node_modules/
+capacitor.config.*
+*.apk
