@@ -13,6 +13,7 @@ const Input = {
   // touch joystick
   stick: { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0 },
   touch: { fire: false, boost: false, rocketPressed: false },
+  swapPressed: false,
   touchUsed: false,
 
   el: {},
@@ -46,6 +47,7 @@ const Input = {
     canvas.addEventListener('pointerdown', (e) => {
       if (e.pointerType === 'mouse') {
         if (e.button === 0) this.mouse.down = true;
+        if (e.button === 2) this.swapPressed = true;
         const r = canvas.getBoundingClientRect();
         this.mouse.x = e.clientX - r.left;
         this.mouse.y = e.clientY - r.top;
@@ -110,6 +112,17 @@ const Input = {
       rk.addEventListener('pointerup', upRk);
       rk.addEventListener('pointercancel', upRk);
     }
+    const sw = document.getElementById('btn-swap');
+    if (sw) {
+      sw.addEventListener('pointerdown', (e) => {
+        this.swapPressed = true;
+        sw.classList.add('pressed');
+        e.preventDefault();
+      });
+      const upSw = () => sw.classList.remove('pressed');
+      sw.addEventListener('pointerup', upSw);
+      sw.addEventListener('pointercancel', upSw);
+    }
   },
 
   bindBtn(id, prop) {
@@ -166,6 +179,11 @@ const Input = {
     return false;
   },
 
+  consumeSwap() {
+    if (this.swapPressed) { this.swapPressed = false; return true; }
+    return false;
+  },
+
   consumePressed(code) {
     if (this.pressed[code]) { this.pressed[code] = false; return true; }
     return false;
@@ -174,6 +192,7 @@ const Input = {
   endFrame() {
     this.pressed = Object.create(null);
     this.touch.rocketPressed = false;
+    this.swapPressed = false;
   },
 
   /** should turret follow the mouse? (desktop: mouse moved in last 3s) */

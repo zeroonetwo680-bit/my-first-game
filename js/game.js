@@ -218,7 +218,9 @@ const ENEMY_TYPES = {
   gunner: { r: 20, hp: 32, speed: 300, accel: 520, turn: 3.3, score: 150, color: '#e07f22', glow: '#ff9a3d', contact: 9, ai: 'gun', fireCd: 1.6, mass: 4 },
   brute:  { r: 30, hp: 155, speed: 235, accel: 400, turn: 2.1, score: 300, color: '#8a3fd4', glow: '#b06cff', contact: 22, ai: 'ram', mass: 9 },
   inter:  { r: 18, hp: 34, speed: 400, accel: 700, turn: 3.7, score: 250, color: '#1dbb6a', glow: '#58ff9b', contact: 10, ai: 'dash', mass: 3.2 },
-  boss:   { r: 40, hp: 780, speed: 250, accel: 400, turn: 1.55, score: 2500, color: '#c22a55', glow: '#ff2255', contact: 24, ai: 'boss', mass: 14 }
+  boss:   { r: 40, hp: 780, speed: 250, accel: 400, turn: 1.55, score: 2500, color: '#c22a55', glow: '#ff2255', contact: 24, ai: 'boss', mass: 14 },
+  bomber: { r: 16, hp: 16, speed: 452, accel: 760, turn: 3.6, score: 120, color: '#e8b420', glow: '#ffd24d', contact: 0, ai: 'bomber', mass: 2.4 },
+  sniper: { r: 18, hp: 30, speed: 310, accel: 540, turn: 3.2, score: 220, color: '#5a7bff', glow: '#8fa8ff', contact: 8, ai: 'sniper', mass: 3 }
 };
 
 const PLAYER_STATS = { accel: 640, maxF: 430, turn: 3.35, grip: 8.5 };
@@ -236,7 +238,8 @@ const UPGRADES = [
   { id: 'nitro',  icon: '\uD83D\uDCA8', name: 'NITRO FLOW',     desc: '+50% nitro recharge',             max: 4, apply: p => { p.mods.nitroRegen += 0.5; } },
   { id: 'magnet', icon: '\uD83E\uDF22', name: 'SCRAP MAGNET',   desc: '+60% pickup pickup range',        max: 3, apply: p => { p.mods.magnet += 0.6; } },
   { id: 'gold',   icon: '\uD83D\uDCB0', name: 'BOUNTY DEAL',    desc: '+15% score from kills',           max: 5, apply: p => { p.mods.scoreMult += 0.15; } },
-  { id: 'repair', icon: '\uD83D\uDD27', name: 'FIELD REPAIR',   desc: 'Repair 60 hull instantly',        max: 99, cond: p => p.hp < p.maxHp * 0.9, apply: p => { p.hp = Math.min(p.maxHp, p.hp + 60); } }
+  { id: 'repair', icon: '\uD83D\uDD27', name: 'FIELD REPAIR',   desc: 'Repair 60 hull instantly',        max: 99, cond: p => p.hp < p.maxHp * 0.9, apply: p => { p.hp = Math.min(p.maxHp, p.hp + 60); } },
+  { id: 'shotgun', icon: '\uD83D\uDD2B', name: 'SCATTER GUN',    desc: 'Unlock the shotgun \u2014 swap with Q', max: 1, cond: p => p.weapons.indexOf('shotgun') < 0, apply: p => { p.weapons.push('shotgun'); p.weapon = 'shotgun'; } }
 ];
 
 /* ============================================================
@@ -267,7 +270,7 @@ const Game = {
   portals: [],
   pillars: [],
 
-  bullets: new Pool(() => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, team: 'p', dmg: 9 }), 220),
+  bullets: new Pool(() => ({ active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, team: 'p', dmg: 9, kb: 0 }), 220),
   rockets: new Pool(() => ({ active: false, x: 0, y: 0, angle: 0, speed: 0, life: 0, target: null, trailT: 0 }), 16),
 
   cam: { x: WORLD.w / 2, y: WORLD.h / 2, zoom: 1 },
@@ -317,6 +320,7 @@ const Game = {
       fireCd: 0, triple: 0, shield: 0,
       boosting: false, flash: 0, skidT: 0, smokeT: 0,
       contactCd: 0, dead: false,
+      weapons: ['gun'], weapon: 'gun',
       mods: { dmg: 1, fireRate: 1, speed: 1, turn: 1, nitroRegen: 1, magnet: 1, scoreMult: 1 },
       upgradeCounts: {}
     };
@@ -594,29 +598,61 @@ const Game = {
     }
     p.turret += angDiff(p.turret, desired) * Math.min(1, 20 * dt);
 
+    // ----- weapon swap -----
+    if (p.weapons.length > 1 && (Input.consumePressed('KeyQ') || Input.consumeSwap())) {
+      this.switchWeapon();
+    }
+
     // ----- fire -----
     p.fireCd -= dt;
     if (Input.getFire() && p.fireCd <= 0) {
-      p.fireCd = (p.triple > 0 ? 0.13 : 0.115) / p.mods.fireRate;
       const nx = p.x + Math.cos(p.angle) * 24;
       const ny = p.y + Math.sin(p.angle) * 24;
-      const angles = p.triple > 0 ? [-0.12, 0, 0.12] : [0];
-      for (const off of angles) {
-        const a = p.turret + off + rand(-0.028, 0.028);
-        const b = this.bullets.obtain();
-        if (!b) break;
-        b.active = true;
-        b.x = nx + Math.cos(a) * 12; b.y = ny + Math.sin(a) * 12;
-        b.vx = Math.cos(a) * 950 + p.vx * 0.35;
-        b.vy = Math.sin(a) * 950 + p.vy * 0.35;
-        b.life = 0.8;
-        b.team = 'p';
-        b.dmg = (p.triple > 0 ? 7 : 9) * p.mods.dmg;
+      if (p.weapon === 'shotgun') {
+        // ===== SCATTER GUN: 6 pellets, short range, heavy knockback =====
+        p.fireCd = 0.72 / Math.min(p.mods.fireRate, 1.5);
+        for (let i = 0; i < 6; i++) {
+          const a = p.turret + (i / 5 - 0.5) * 0.4 + rand(-0.03, 0.03);
+          const b = this.bullets.obtain();
+          if (!b) break;
+          b.active = true;
+          b.x = nx + Math.cos(a) * 14; b.y = ny + Math.sin(a) * 14;
+          const sp = rand(700, 900);
+          b.vx = Math.cos(a) * sp + p.vx * 0.25;
+          b.vy = Math.sin(a) * sp + p.vy * 0.25;
+          b.life = rand(0.28, 0.36);
+          b.team = 'p';
+          b.dmg = 8 * p.mods.dmg;
+          b.kb = 150;
+        }
+        FX.emit({ x: nx + Math.cos(p.turret) * 14, y: ny + Math.sin(p.turret) * 14, life: 0.09, size: 16, color: '#ffd24d', kind: 'glow', grow: 120 });
+        FX.muzzle(nx + Math.cos(p.turret) * 12, ny + Math.sin(p.turret) * 12, p.turret, '#ffb84d');
+        AudioSys.shotgun();
+        FX.addShake(2.2);
+        p.vx -= Math.cos(p.turret) * 60;
+        p.vy -= Math.sin(p.turret) * 60;
+      } else {
+        // ===== MACHINE GUN =====
+        p.fireCd = (p.triple > 0 ? 0.13 : 0.115) / p.mods.fireRate;
+        const angles = p.triple > 0 ? [-0.12, 0, 0.12] : [0];
+        for (const off of angles) {
+          const a = p.turret + off + rand(-0.028, 0.028);
+          const b = this.bullets.obtain();
+          if (!b) break;
+          b.active = true;
+          b.x = nx + Math.cos(a) * 12; b.y = ny + Math.sin(a) * 12;
+          b.vx = Math.cos(a) * 950 + p.vx * 0.35;
+          b.vy = Math.sin(a) * 950 + p.vy * 0.35;
+          b.life = 0.8;
+          b.team = 'p';
+          b.dmg = (p.triple > 0 ? 7 : 9) * p.mods.dmg;
+          b.kb = 0;
+        }
+        FX.muzzle(nx + Math.cos(p.turret) * 10, ny + Math.sin(p.turret) * 10, p.turret, '#ffd24d');
+        AudioSys.shoot();
+        p.vx -= Math.cos(p.turret) * 9;
+        p.vy -= Math.sin(p.turret) * 9;
       }
-      FX.muzzle(nx + Math.cos(p.turret) * 10, ny + Math.sin(p.turret) * 10, p.turret, '#ffd24d');
-      AudioSys.shoot();
-      p.vx -= Math.cos(p.turret) * 9;
-      p.vy -= Math.sin(p.turret) * 9;
     }
 
     // ----- rockets -----
@@ -717,6 +753,8 @@ const Game = {
       fireCd: rand(0.9, 1.8), contactCd: 0, retreatT: 0, flash: 0,
       seed: rand(TAU), ai: def.ai, phase: 'cruise', phaseT: rand(0.6, 1.6),
       bphase: 'approach', rage: false,
+      sphase: 'reposition', snT: rand(1, 2), aimT: 0, aimA: 0,
+      fuseT: null, beepT: 0, detonated: false,
       orbitDir: Math.random() < 0.5 ? 1 : -1,
       boosting: false, skidT: 0, smokeT: 0, wander: false
     };
@@ -748,12 +786,15 @@ const Game = {
       for (let i = 0; i < count; i++) {
         const r = Math.random();
         let t = 'rammer';
-        if (n >= 2 && r < 0.3) t = 'gunner';
-        else if (n >= 3 && r > 0.88) t = 'brute';
-        else if (n >= 4 && r > 0.6 && r < 0.74) t = 'inter';
+        if (n >= 2 && r < 0.28) t = 'gunner';
+        else if (n >= 3 && r > 0.9) t = 'brute';
+        else if (n >= 4 && r >= 0.58 && r < 0.7) t = 'inter';
+        else if (n >= 6 && r >= 0.7 && r < 0.8) t = 'bomber';
+        else if (n >= 8 && r < 0.05) t = 'sniper';
         list.push(t);
       }
       if (n % 5 === 4) list.push('brute');
+      if (n >= 9) list.push('sniper');
       banner('WAVE ' + n);
       AudioSys.waveHorn();
     }
@@ -771,6 +812,15 @@ const Game = {
     this.betweenWaves = true;
     this.betweenTimer = 2.0;
     this.pendingUpgrades = true;
+  },
+
+  switchWeapon() {
+    const p = this.player;
+    if (p.weapons.length < 2) return;
+    p.weapon = p.weapons[(p.weapons.indexOf(p.weapon) + 1) % p.weapons.length];
+    p.fireCd = Math.max(p.fireCd, 0.28);
+    AudioSys.ui();
+    FX.text(p.x, p.y - 42, p.weapon === 'shotgun' ? '\uD83D\uDD2B SHOTGUN' : 'MACHINE GUN', '#b06cff', 15);
   },
 
   openUpgradeScreen() {
@@ -944,7 +994,7 @@ const Game = {
         case 'summon': {
           throttle = 0.1;
           if (e.phaseT <= 0) {
-            const kinds = rage ? ['rammer', 'gunner', 'inter'] : ['rammer', 'gunner'];
+            const kinds = rage ? ['rammer', 'bomber', 'inter'] : ['rammer', 'gunner'];
             for (let i = 0; i < kinds.length; i++) {
               const a = ang + Math.PI + (i - (kinds.length - 1) / 2) * 0.95;
               const px = clamp(e.x + Math.cos(a) * (e.r + 95), 100, WORLD.w - 100);
@@ -989,6 +1039,60 @@ const Game = {
             else { e.bphase = 'summon_wind'; e.phaseT = rage ? 0.4 : 0.5; }
           }
         }
+      }
+    } else if (e.ai === 'sniper') {
+      // ===== SNIPER: keeps distance, laser telegraph, heavy shot =====
+      const dxp = p.x - e.x, dyp = p.y - e.y;
+      const d = Math.hypot(dxp, dyp);
+      e.snT -= dt;
+      if (e.sphase === 'aim') {
+        desired = Math.atan2(dyp, dxp);
+        throttle = 0.06;
+        e.aimT = Math.min(1, e.aimT + dt / 1.6);
+        e.aimA = Math.atan2(p.y + p.vy * 0.22 - e.y, p.x + p.vx * 0.22 - e.x);
+        if (e.aimT >= 1 && e.snT <= 0) {
+          if (!p.dead) {
+            const b = this.bullets.obtain();
+            if (b) {
+              b.active = true;
+              b.x = e.x + Math.cos(e.aimA) * e.r;
+              b.y = e.y + Math.sin(e.aimA) * e.r;
+              b.vx = Math.cos(e.aimA) * 920;
+              b.vy = Math.sin(e.aimA) * 920;
+              b.life = 1.4; b.team = 'e'; b.dmg = 13; b.kb = 0;
+            }
+            FX.muzzle(e.x + Math.cos(e.aimA) * e.r, e.y + Math.sin(e.aimA) * e.r, e.aimA, '#ff4d6e');
+            AudioSys.sniperShot();
+          }
+          e.sphase = 'reposition';
+          e.snT = rand(1.8, 2.6);
+          e.aimT = 0;
+        }
+      } else {
+        desired = d < 640 ? Math.atan2(-dyp, -dxp) + e.orbitDir * 0.7
+          : d > 830 ? Math.atan2(dyp, dxp)
+          : Math.atan2(dyp, dxp) + e.orbitDir * 1.25;
+        throttle = 0.75;
+        e.aimT = Math.max(0, e.aimT - dt * 2);
+        if (e.snT <= 0 && d < 880 && !p.dead) { e.sphase = 'aim'; e.aimT = 0; e.snT = 1.7; }
+      }
+    } else if (e.ai === 'bomber') {
+      // ===== BOMBER: kamikaze with fuse + beep telegraph =====
+      const d = Math.hypot(p.x - e.x, p.y - e.y);
+      desired = Math.atan2(p.y - e.y, p.x - e.x) + Math.sin(this.time * 6 + e.seed) * 0.12;
+      throttle = 1.25;
+      if (e.fuseT !== null) {
+        e.fuseT -= dt;
+        e.beepT -= dt;
+        if (e.beepT <= 0) {
+          e.beepT = Math.max(0.08, e.fuseT * 0.22);
+          AudioSys.beep();
+          FX.sparks(e.x, e.y, '#ffd24d', 3, 130);
+        }
+        if (e.fuseT <= 0 || d < e.r + p.r + 6) this.detonateBomber(e);
+      } else if (d < 175 && !p.dead) {
+        e.fuseT = 0.85;
+        e.beepT = 0;
       }
     }
 
@@ -1048,6 +1152,7 @@ const Game = {
     const n = this.enemies.length;
     for (let i = n - 1; i >= 0; i--) {
       const e = this.enemies[i];
+      if (!e) continue; // chain detonations can shrink the array mid-loop
       this.updateEnemy(e, dt);
     }
     // pairwise separation
@@ -1098,6 +1203,11 @@ const Game = {
           if (dist2(b.x, b.y, e.x, e.y) < rr * rr) {
             b.active = false;
             damageEnemy(e, b.dmg, b.x, b.y);
+            if (b.kb) {
+              const sp = Math.hypot(b.vx, b.vy) || 1;
+              e.vx += b.vx / sp * b.kb / e.mass;
+              e.vy += b.vy / sp * b.kb / e.mass;
+            }
             break;
           }
         }
@@ -1224,6 +1334,37 @@ const Game = {
       else type = 'shield';
     }
     this.pickups.push({ x, y, type, t: rand(TAU), life: 12 });
+  },
+
+  detonateBomber(e) {
+    if (e.detonated) return;
+    e.detonated = true;
+    const idx = this.enemies.indexOf(e);
+    if (idx >= 0) this.enemies.splice(idx, 1);
+    FX.explosion(e.x, e.y, '#ffb84d', 1.35, true);
+    AudioSys.explosion(false);
+    FX.addShake(6);
+    this.hitStop = Math.max(this.hitStop, 0.03);
+    const R = 125;
+    for (const o of this.enemies) {
+      const d = Math.hypot(o.x - e.x, o.y - e.y);
+      if (d < R + o.r && o !== e) {
+        damageEnemy(o, 45 * (1 - clamp(d / (R + o.r), 0, 1)) + 8, o.x, o.y);
+        const a = Math.atan2(o.y - e.y, o.x - e.x);
+        o.vx += Math.cos(a) * 200 / o.mass;
+        o.vy += Math.sin(a) * 200 / o.mass;
+      }
+    }
+    const P = this.player;
+    if (!P.dead) {
+      const d = Math.hypot(P.x - e.x, P.y - e.y);
+      if (d < R + P.r) {
+        damagePlayer(24 * (1 - clamp(d / (R + P.r), 0, 1)) + 4, e.x, e.y);
+        const a = Math.atan2(P.y - e.y, P.x - e.x);
+        P.vx += Math.cos(a) * 260;
+        P.vy += Math.sin(a) * 260;
+      }
+    }
   },
 
   /* ============================================================
@@ -1389,6 +1530,13 @@ const Game = {
     // cars
     for (const e of this.enemies) {
       drawCar(e, SPRITES[e.type]);
+      if (e.type === 'bomber' && e.fuseT !== null && Math.floor(e.fuseT * 14) % 2 === 0) {
+        ctx.globalAlpha = 0.75;
+        const g = FX.makeGlow('#ff5030');
+        const gs = e.r * 4.4;
+        ctx.drawImage(g, e.x - gs / 2, e.y - gs / 2, gs, gs);
+        ctx.globalAlpha = 1;
+      }
       if (e.hp < e.maxHp && !e.wander) drawHpBar(e);
     }
     const p = this.player;
@@ -1422,6 +1570,18 @@ const Game = {
       ctx.fillStyle = '#ff5030';
       ctx.fillRect(5, -2.5, 4, 5);
       ctx.restore();
+    }
+    for (const e of this.enemies) {
+      if (e.type === 'sniper' && e.aimT > 0.02) {
+        ctx.globalAlpha = 0.2 + 0.55 * e.aimT;
+        ctx.strokeStyle = '#ff4d6e';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(e.x + Math.cos(e.aimA) * e.r, e.y + Math.sin(e.aimA) * e.r);
+        ctx.lineTo(e.x + Math.cos(e.aimA) * 950, e.y + Math.sin(e.aimA) * 950);
+        ctx.stroke();
+        ctx.globalAlpha = 1;
+      }
     }
     for (const e of this.enemies) {
       if (e.type === 'boss' && e.bphase && e.bphase.indexOf('_wind') >= 0) {
@@ -1563,6 +1723,15 @@ const Game = {
       c.rockets = p.rockets;
       document.getElementById('rocket-charges').textContent = '\u00d7' + p.rockets;
       document.getElementById('rocket-chip').classList.toggle('ready', p.rockets > 0);
+    }
+    // weapon
+    if (c.weapon !== p.weapon) {
+      c.weapon = p.weapon;
+      document.getElementById('weapon-name').textContent = p.weapon === 'shotgun' ? 'SG' : 'MG';
+    }
+    if (c.swapVisible !== (p.weapons.length > 1)) {
+      c.swapVisible = p.weapons.length > 1;
+      document.getElementById('btn-swap').classList.toggle('hidden', !c.swapVisible);
     }
     // score (animated count-up)
     if (this.shownScore !== this.score) {
@@ -1742,9 +1911,9 @@ function collideCars(a, b, involvesPlayer) {
   // ram contact damage — global player immunity window keeps swarms fair
   if (e.contactCd <= 0 && P.contactCd <= 0 && !e.wander) {
     e.contactCd = 1.0;
-    e.retreatT = 0.7;
+    e.retreatT = Game.wave <= 1 ? 1.3 : 0.7;
     P.contactCd = 0.4;
-    damagePlayer(e.def.contact * clamp(0.6 + 0.08 * Game.wave, 0.6, 1), e.x, e.y);
+    damagePlayer(e.def.contact * clamp(0.6 + 0.08 * Game.wave, 0.6, 1) * (Game.runTime < 3 ? 0.5 : 1), e.x, e.y);
     // enemies bounce off hard, player gets nudged
     const a2 = Math.atan2(e.y - P.y, e.x - P.x);
     e.vx += Math.cos(a2) * 430 / e.mass;
@@ -1778,6 +1947,7 @@ function killEnemy(e) {
   AudioSys.explosion(big);
   Game.hitStop = Math.max(Game.hitStop, big ? 0.055 : 0.028);
   Game.registerKill(e);
+  if (e.type === 'bomber') Game.detonateBomber(e);
   if (e.type === 'boss') {
     // chained boss detonation + loot + bonus
     FX.explosion(e.x + rand(-36, 36), e.y + rand(-36, 36), '#ffb84d', 1.6, false);
@@ -1918,6 +2088,8 @@ function buildAllSprites() {
   SPRITES.brute = makeCarSprite({ len: 66, wid: 40, body: '#8a3fd4', glow: '#b06cff', stripe: '#e3ccff' });
   SPRITES.inter = makeCarSprite({ len: 42, wid: 22, body: '#1dbb6a', glow: '#58ff9b', stripe: '#c9ffe2' });
   SPRITES.boss = makeCarSprite({ len: 104, wid: 62, body: '#c22a55', glow: '#ff2255', stripe: '#ffd9e6', heavy: true });
+  SPRITES.bomber = makeCarSprite({ len: 38, wid: 22, body: '#e8b420', glow: '#ffd24d', stripe: '#1a1408' });
+  SPRITES.sniper = makeCarSprite({ len: 50, wid: 20, body: '#5a7bff', glow: '#8fa8ff', stripe: '#dfe6ff' });
   for (const k in PICKUP_DEFS) {
     PICKUP_DEFS[k].spr = makePickupSprite(PICKUP_DEFS[k].color, PICKUP_DEFS[k].glyph);
   }
@@ -1948,9 +2120,9 @@ function wireUI() {
   // controls hint
   const hint = document.getElementById('controls-hint');
   if (IS_TOUCH) {
-    hint.innerHTML = 'LEFT SIDE &mdash; drag to drive &bull; <b>FIRE</b> / <b>NOS</b> / <b>RKT</b> buttons &bull; auto-aim assist ON';
+    hint.innerHTML = 'LEFT SIDE &mdash; drag to drive &bull; <b>FIRE</b> / <b>NOS</b> / <b>RKT</b> buttons &bull; <b>SWP</b> swaps weapons (when unlocked) &bull; auto-aim assist ON';
   } else {
-    hint.innerHTML = '<span class="key">W A S D</span> drive &bull; <span class="key">SPACE</span>/<span class="key">CLICK</span> fire &bull; <span class="key">SHIFT</span> nitro &bull; <span class="key">E</span> rocket &bull; <span class="key">P</span> pause &bull; mouse aims the gun';
+    hint.innerHTML = '<span class="key">W A S D</span> drive &bull; <span class="key">SPACE</span>/<span class="key">CLICK</span> fire &bull; <span class="key">SHIFT</span> nitro &bull; <span class="key">E</span> rocket &bull; <span class="key">Q</span>/right-click swap weapon &bull; <span class="key">P</span> pause &bull; mouse aims the gun';
   }
 }
 

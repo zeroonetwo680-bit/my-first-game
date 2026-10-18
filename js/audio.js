@@ -164,6 +164,21 @@ const AudioSys = {
     this._tone('square', rand(380, 440), 110, 0.06, 0.1);
   },
 
+  shotgun() {
+    if (!this.ctx) return;
+    this._noise(0.24, 'lowpass', 3200, 260, 0.5);
+    this._tone('sine', 150, 42, 0.22, 0.32);
+  },
+
+  beep() {
+    this._tone('square', 1150, 1150, 0.05, 0.07);
+  },
+
+  sniperShot() {
+    this._noise(0.14, 'bandpass', 3200, 700, 0.22, 2);
+    this._tone('square', 950, 170, 0.12, 0.13);
+  },
+
   enemyShoot() {
     this._noise(0.08, 'bandpass', 1200, 400, 0.09, 1.2);
   },

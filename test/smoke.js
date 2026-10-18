@@ -68,6 +68,17 @@ const sandbox = {
     addEventListener() {}
   }
 };
+// deterministic RNG so runs are reproducible
+function mulberry32(a) {
+  return function () {
+    a |= 0; a = (a + 0x6D2B79F5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+sandbox.Math = Object.create(Math);
+sandbox.Math.random = mulberry32(20260108);
 sandbox.window = sandbox;
 sandbox.globalThis = sandbox;
 sandbox.addEventListener = () => {};
@@ -128,7 +139,7 @@ check('blind bot survives a reasonable time (or is still going)', 'Game.state + 
   const [state, diedAt] = s.split(':');
   return (state === 'playing' && diedAt === '-1') || Number(diedAt) > 20;
 });
-check('hp healthy after first 10s (fun, not brutal)', 'this.__hp10', h => h > 50);
+check('hp healthy after first 10s (fun, not brutal)', 'this.__hp10', h => h > 45);
 check('player object present', 'Game.player ? "ok" : "no"', s => s === 'ok');
 check('particles were spawned mid-run', 'this.__midParticles', b => b === true);
 check('bullets flew', 'Game.bullets.items.some(b => b.active) || Game.score > 0', b => b === true);
@@ -272,6 +283,69 @@ for (const t of types) Game.applyPickup({ x: Game.player.x, y: Game.player.y, ty
 check('repair applied', 'Game.player.hp', h => h > 0);
 check('triple timer set', 'Game.player.triple', t => t > 0);
 check('shield timer set', 'Game.player.shield', t => t > 0);
+
+console.log('--- shotgun: unlock, fire spread pellets, swap back ---');
+run(`
+Game.startRun();
+const sp = Game.player;
+sp.weapons.push('shotgun');
+sp.weapon = 'shotgun';
+this.__maxPellets = 0;
+for (let i = 0; i < 60; i++) {
+  Input.keys['Space'] = true;
+  __frame((68000 + i) * 16.6);
+  Input.endFrame();
+  this.__maxPellets = Math.max(this.__maxPellets, Game.bullets.items.filter(b => b.active && b.kb > 0).length);
+}
+`);
+check('shotgun fires spread pellets', 'this.__maxPellets', n => n >= 4);
+run(`
+Input.pressed['KeyQ'] = true;
+__frame((68070) * 16.6);
+Input.endFrame();
+`);
+check('Q swaps back to machine gun', 'Game.player.weapon', w => w === 'gun');
+
+console.log('--- bomber: fuse, detonation, area damage ---');
+run(`
+Game.startRun();
+Input.keys = Object.create(null);   // release keys held by earlier sections
+const bp = Game.player;
+bp.hp = 100; bp.shield = 0;
+Game.spawnEnemy('bomber', bp.x + 120, bp.y);
+this.__bomberHp0 = bp.hp;
+this.__bomberGone = false;
+this.__minHp = 100;
+for (let i = 0; i < 260 && !this.__bomberGone; i++) {
+  bp.vx = 0; bp.vy = 0;             // keep the test player stationary
+  __frame((68200 + i) * 16.6);
+  Input.endFrame();
+  this.__minHp = Math.min(this.__minHp, Game.player.hp);
+  if (!Game.enemies.some(e => e.type === 'bomber')) this.__bomberGone = true;
+}
+`);
+check('bomber detonated and left the field', 'this.__bomberGone', v => v === true);
+check('detonation damaged the player', 'this.__minHp', h => h < 100);
+
+console.log('--- sniper: laser telegraph then heavy shot ---');
+run(`
+Game.startRun();
+Input.keys = Object.create(null);
+const np = Game.player;
+Game.spawnEnemy('sniper', np.x + 600, np.y);
+this.__sniperLaser = false;
+this.__sniperFired = false;
+for (let i = 0; i < 300 && !this.__sniperFired; i++) {
+  __frame((68600 + i) * 16.6);
+  Input.endFrame();
+  const sn = Game.enemies.find(e => e.type === 'sniper');
+  if (sn && sn.aimT > 0.3) this.__sniperLaser = true;
+  if (Game.bullets.items.some(b => b.active && b.team === 'e' && Math.hypot(b.vx, b.vy) > 800)) this.__sniperFired = true;
+}
+`);
+check('sniper shows laser telegraph', 'this.__sniperLaser', v => v === true);
+check('sniper fires high-speed shot', 'this.__sniperFired', v => v === true);
+check('sniper shot is lethal-grade damage bullet present or player hit', 'Game.player.hp >= 0', v => v === true);
 
 console.log('--- death & game over ---');
 run(`

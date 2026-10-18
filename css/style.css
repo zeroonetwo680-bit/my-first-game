@@ -348,6 +348,14 @@ canvas#game {
   width: 60px; height: 60px; font-size: 12px;
   border-color: rgba(53, 240, 255, 0.7); background: rgba(53, 240, 255, 0.12);
 }
+#btn-swap {
+  right: calc(46px + env(safe-area-inset-right)); bottom: calc(196px + env(safe-area-inset-bottom));
+  width: 56px; height: 56px; font-size: 11px;
+  border-color: rgba(176, 108, 255, 0.75); background: rgba(176, 108, 255, 0.14);
+  color: #e6d5ff;
+}
+#weapon-chip { margin-left: 6px; color: #b06cff; border-color: rgba(176, 108, 255, 0.5); background: rgba(18, 10, 32, 0.6); }
+#weapon-chip b { color: #e6d5ff; }
 
 @media (max-width: 760px) {
   #banner { font-size: 30px; letter-spacing: 6px; }

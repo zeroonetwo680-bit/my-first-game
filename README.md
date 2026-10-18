@@ -22,6 +22,7 @@ python3 -m http.server 8000
 | Fire | `Space` or hold **left mouse** (mouse aims the gun) | `FIRE` button (auto-aim assist) |
 | Nitro boost | `Shift` | `NOS` button |
 | Homing rocket | `E` | `RKT` button |
+| Swap weapon | `Q` or **right-click** (after unlocking the shotgun) | `SWP` button |
 | Pause | `P` / `Esc` | pause button (auto-pauses on tab switch) |
 | Mute | `M` | speaker button |
 | Instant restart | `Enter` / `R` (game over) | big buttons |
@@ -30,14 +31,17 @@ python3 -m http.server 8000
 
 - **Tight arcade car physics** — forward/lateral grip model with drifty skids,
   boost, wall bounces, and mass-based car-to-car collisions.
-- **Four enemy types** — rammers, orbiting gunners, tank brutes, and dash
-  interceptors, mixed into escalating waves with spawn telegraphs.
 - **Boss every 5 waves** — WARLORD, a massive armored car with telegraphed
   volley spreads, charge dashes, minion summons, an enrage phase below 50% HP,
   a dedicated boss health bar, chained detonation death, and big loot.
+- **Second weapon: the Scatter Gun** — a shotgun upgrade card unlocks 6-pellet
+  spread shots with heavy knockback; swap anytime with `Q` / right-click.
 - **Roguelite upgrades** — after every cleared wave, pick 1 of 3 upgrades
   (damage, fire rate, rockets, armor, engine, grip, nitro, magnet, bounty,
-  repair). Keys 1/2/3 or tap.
+  repair, shotgun unlock). Keys 1/2/3 or tap.
+- **Six enemy types** — rammers, orbiting gunners, tank brutes, dash
+  interceptors, kamikaze **bombers** (beeping fuse + chain-reaction area
+  explosions) and **snipers** (laser-sight telegraph, high-speed heavy shot).
 - **Juice everywhere** — screen shake, hit-stop, additive particle bursts,
   persistent skid marks and scorch decals, muzzle flashes, floating score text,
   dynamic camera (look-ahead + speed zoom), CRT scanlines, hit vignette.
@@ -67,5 +71,6 @@ test/smoke.js     headless smoke test (node test/smoke.js)
 ## Testing
 
 The game logic is fully runnable headless — `node test/smoke.js` boots the
-game with stubbed browser APIs, simulates minutes of play (waves, rockets,
-pickups, death, restart, pause, touch input) and asserts on game state.
+game with stubbed browser APIs and a seeded RNG, simulates minutes of play
+(waves, boss fights, upgrades, shotgun/bomber/sniper, pickups, death,
+restart, pause, touch input) and asserts on game state (53 checks).
