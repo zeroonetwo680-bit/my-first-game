@@ -1,0 +1,83 @@
+name: Block Nova APK
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'block-nova/**'
+      - '.github/workflows/block-nova-apk.yml'
+      - 'scripts/prepare-blocknova.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Assemble self-contained web bundle
+        run: bash scripts/prepare-blocknova.sh
+
+      - name: Install Capacitor
+        run: npm install --no-fund --no-audit @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+
+      - name: Init Capacitor project
+        run: npx --yes cap init "BLOCK NOVA" "com.neonwreckage.blocknova" --web-dir www
+
+      - name: Add Android platform
+        run: npx --yes cap add android
+
+      - name: Sync web assets
+        run: npx --yes cap sync android
+
+      - name: Apply game icon
+        run: |
+          which convert || (sudo apt-get update -qq && sudo apt-get install -y -qq imagemagick)
+          RES=android/app/src/main/res
+          rm -f $RES/mipmap-anydpi-v26/*.xml
+          declare -A D=( [mdpi]=48 [hdpi]=72 [xhdpi]=96 [xxhdpi]=144 [xxxhdpi]=192 )
+          for d in "${!D[@]}"; do
+            convert block-nova/assets/icon-512.png -resize ${D[$d]}x${D[$d]} $RES/mipmap-$d/ic_launcher.png
+            convert block-nova/assets/icon-512.png -resize ${D[$d]}x${D[$d]} $RES/mipmap-$d/ic_launcher_round.png
+          done
+          convert block-nova/assets/icon-512.png -resize 432x432 -background '#04060f' -gravity center -extent 432x432 $RES/mipmap-xxxhdpi/ic_launcher_foreground.png
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: block-nova-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          cp "$APK" BLOCK-NOVA.apk
+          gh release delete blocknova-android-latest --yes --cleanup || true
+          git tag -f blocknova-android-latest "$GITHUB_SHA"
+          git push -f origin "refs/tags/blocknova-android-latest"
+          gh release create blocknova-android-latest \
+            --title "BLOCK NOVA — Android APK" \
+            --notes "Installable debug APK of BLOCK NOVA. The whole game is bundled — works fully offline. Enable 'install unknown apps' for your browser/file manager, then install. Play Protect may warn about debug signatures; choose 'Install anyway'." \
+            BLOCK-NOVA.apk

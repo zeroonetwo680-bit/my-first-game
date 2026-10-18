@@ -12,6 +12,7 @@ let vw = 0, vh = 0, dpr = 1;
 /* layout (recomputed on resize) */
 const L = { boardX: 0, boardY: 0, cell: 40, trayY: 0, trayCell: 22, slotW: 0 };
 let cellSprites = [];
+let stoneSprites = [];
 
 /* ============================================================
    Game
@@ -23,6 +24,7 @@ const Game = {
   runTime: 0,
 
   board: new Uint8Array(GRID * GRID), // 0 empty, else palette k+1
+  stones: new Uint8Array(GRID * GRID), // 0 none, 1 intact rock, 2 cracked
   tray: [],
   lastSlot: 0,
 
@@ -89,6 +91,57 @@ const Game = {
 
   buildSprites() {
     cellSprites = PALETTE.map((col) => this.makeCellSprite(L.cell, col));
+    stoneSprites = [this.makeStoneSprite(L.cell, false), this.makeStoneSprite(L.cell, true)];
+  },
+
+  makeStoneSprite(size, cracked) {
+    const SS = 2;
+    const c = document.createElement('canvas');
+    c.width = c.height = Math.ceil(size * SS);
+    const g = c.getContext('2d');
+    g.scale(SS, SS);
+    const m = Math.max(1.5, size * 0.045);
+    const sz = size - m * 2;
+    const r = Math.max(3, size * 0.16);
+    const base = cracked ? '#3a3346' : '#2a3448';
+    const edge = cracked ? 'rgba(255,154,61,0.85)' : 'rgba(143,168,255,0.55)';
+    g.shadowColor = 'rgba(0,0,0,0.6)';
+    g.shadowBlur = size * 0.12;
+    g.fillStyle = base;
+    this.roundRect(g, m, m, sz, sz, r);
+    g.fill();
+    g.shadowBlur = 0;
+    // facet highlight
+    g.globalAlpha = 0.25;
+    g.fillStyle = '#9fb4d8';
+    g.beginPath();
+    g.moveTo(m + sz * 0.18, m + sz * 0.16);
+    g.lineTo(m + sz * 0.62, m + sz * 0.1);
+    g.lineTo(m + sz * 0.4, m + sz * 0.44);
+    g.closePath();
+    g.fill();
+    g.globalAlpha = 1;
+    // border
+    g.strokeStyle = edge;
+    g.lineWidth = Math.max(1.2, size * 0.05);
+    this.roundRect(g, m + 1, m + 1, sz - 2, sz - 2, r);
+    g.stroke();
+    if (cracked) {
+      g.strokeStyle = '#ffb84d';
+      g.lineWidth = Math.max(1.4, size * 0.055);
+      g.beginPath();
+      g.moveTo(m + sz * 0.25, m + sz * 0.2);
+      g.lineTo(m + sz * 0.45, m + sz * 0.5);
+      g.lineTo(m + sz * 0.32, m + sz * 0.78);
+      g.moveTo(m + sz * 0.45, m + sz * 0.5);
+      g.lineTo(m + sz * 0.72, m + sz * 0.58);
+      g.stroke();
+    } else {
+      g.fillStyle = 'rgba(159,180,216,0.35)';
+      g.beginPath(); g.arc(m + sz * 0.7, m + sz * 0.7, sz * 0.05, 0, TAU); g.fill();
+      g.beginPath(); g.arc(m + sz * 0.3, m + sz * 0.66, sz * 0.035, 0, TAU); g.fill();
+    }
+    return c;
   },
 
   makeCellSprite(size, color) {
@@ -147,6 +200,73 @@ const Game = {
     return `rgb(${r},${g},${b})`;
   },
 
+  /* ---------------- difficulty tier 0..4 (rises every 10 lines) ---------------- */
+  tier() {
+    return Math.min(4, Math.floor(this.lines / 10));
+  },
+
+  /* ---------------- stones: rocks that crack, then shatter ---------------- */
+  spawnStones(n) {
+    let total = 0;
+    for (let i = 0; i < this.stones.length; i++) if (this.stones[i]) total++;
+    let placed = 0, tries = 0;
+    while (placed < n && total < 4 && tries < 60) {
+      tries++;
+      const idx = (Math.random() * this.stones.length) | 0;
+      if (this.board[idx] || this.stones[idx]) continue;
+      this.stones[idx] = 1;
+      total++; placed++;
+      const gx = idx % GRID, gy = (idx / GRID) | 0;
+      FX.ring(this.cellCX(gx), this.cellCY(gy), '#8fa8ff', L.cell * 0.8, 0.5);
+      FX.text(this.cellCX(gx), this.cellCY(gy) - L.cell * 0.8, 'ROCK', '#9fb4d8', 14);
+    }
+    return placed;
+  },
+
+  maybeSpawnStones() {
+    const tier = this.tier();
+    if (tier < 1) return;
+    if (Math.random() < 0.22 + tier * 0.12) {
+      this.spawnStones(1 + (tier >= 3 && Math.random() < 0.5 ? 1 : 0));
+    }
+  },
+
+  damageStone(idx, heavy) {
+    const gx = idx % GRID, gy = (idx / GRID) | 0;
+    const cx = this.cellCX(gx), cy = this.cellCY(gy);
+    if (heavy && this.stones[idx]) {
+      this.stones[idx] = 0;
+      this.score += 50;
+      FX.sparks(cx, cy, '#ffb84d', 10, 340);
+      FX.ring(cx, cy, '#ffb84d', L.cell, 0.35);
+      FX.text(cx, cy - L.cell * 0.5, '+50', '#ffb84d', 17);
+      AudioSys.hammer();
+      Platform2.vibrate(14);
+      return;
+    }
+    if (this.stones[idx] === 2) {
+      this.stones[idx] = 0;
+      this.score += 50;
+      FX.sparks(cx, cy, '#ffb84d', 8, 300);
+      FX.ring(cx, cy, '#ffb84d', L.cell, 0.3);
+      FX.text(cx, cy - L.cell * 0.5, '+50', '#ffb84d', 16);
+      AudioSys.hammer();
+      Platform2.vibrate(12);
+    } else if (this.stones[idx] === 1) {
+      this.stones[idx] = 2;
+      FX.sparks(cx, cy, '#9fb4d8', 5, 200);
+      FX.text(cx, cy - L.cell * 0.5, 'CRACKED', '#9fb4d8', 13);
+      AudioSys.ui();
+      Platform2.vibrate(8);
+    }
+  },
+
+  isBoardEmpty() {
+    for (let i = 0; i < this.board.length; i++) if (this.board[i]) return false;
+    for (let i = 0; i < this.stones.length; i++) if (this.stones[i]) return false;
+    return true;
+  },
+
   /* ---------------- flow ---------------- */
   enterMenu() {
     this.state = 'menu';
@@ -161,6 +281,7 @@ const Game = {
     AudioSys.init(); AudioSys.resume();
     this.mode = mode;
     this.board.fill(0);
+    this.stones.fill(0);
     this.tray.length = 0;
     this.refillTray();
     this.score = 0; this.shownScore = 0;
@@ -205,7 +326,7 @@ const Game = {
 
   /* ---------------- tray ---------------- */
   newPiece() {
-    const s = pickShape();
+    const s = pickShape(this.tier());
     return { cells: s.cells.map(p => p.slice()), w: s.w, h: s.h, color: s.color, k: s.k, used: false, spawnT: 0 };
   },
 
@@ -216,6 +337,7 @@ const Game = {
       if (set.some(p => this.canFitAny(p))) {
         this.tray.length = 0;
         this.tray.push(...set);
+        this.maybeSpawnStones();
         return;
       }
     }
@@ -224,13 +346,15 @@ const Game = {
     single.cells = [[0, 0]]; single.w = 1; single.h = 1; single.k = 2; single.color = PALETTE[2];
     this.tray.length = 0;
     this.tray.push(single, this.newPiece(), this.newPiece());
+    this.maybeSpawnStones();
   },
 
   /* ---------------- board logic ---------------- */
   canPlace(p, gx, gy) {
     if (gx < 0 || gy < 0 || gx + p.w > GRID || gy + p.h > GRID) return false;
     for (const [cx, cy] of p.cells) {
-      if (this.board[(gy + cy) * GRID + gx + cx]) return false;
+      const idx = (gy + cy) * GRID + gx + cx;
+      if (this.board[idx] || this.stones[idx]) return false;
     }
     return true;
   },
@@ -287,12 +411,18 @@ const Game = {
     const rows = [], cols = [];
     for (let y = 0; y < GRID; y++) {
       let full = true;
-      for (let x = 0; x < GRID; x++) if (!this.board[y * GRID + x]) { full = false; break; }
+      for (let x = 0; x < GRID; x++) {
+        const idx = y * GRID + x;
+        if (!this.board[idx] && !this.stones[idx]) { full = false; break; }
+      }
       if (full) rows.push(y);
     }
     for (let x = 0; x < GRID; x++) {
       let full = true;
-      for (let y = 0; y < GRID; y++) if (!this.board[y * GRID + x]) { full = false; break; }
+      for (let y = 0; y < GRID; y++) {
+        const idx = y * GRID + x;
+        if (!this.board[idx] && !this.stones[idx]) { full = false; break; }
+      }
       if (full) cols.push(x);
     }
     const nLines = rows.length + cols.length;
@@ -307,15 +437,20 @@ const Game = {
     const cx = this.boardXY().x + GRID * L.cell / 2;
     const cy = this.boardXY().y + GRID * L.cell / 2;
     let i = 0;
+    let clearedCount = 0;
     for (const idx of cellSet) {
       const k = this.board[idx];
       const gx = idx % GRID, gy = (idx / GRID) | 0;
-      this.board[idx] = 0;
-      const delay = (i % 7) * 0.016 + ((i / 7) | 0) * 0.02;
-      this.clearAnims.push({
-        x: this.cellCX(gx), y: this.cellCY(gy),
-        color: PALETTE[k - 1], t: 0, delay
-      });
+      if (k) {
+        this.board[idx] = 0;
+        clearedCount++;
+        const delay = (i % 7) * 0.016 + ((i / 7) | 0) * 0.02;
+        this.clearAnims.push({
+          x: this.cellCX(gx), y: this.cellCY(gy),
+          color: PALETTE[k - 1], t: 0, delay
+        });
+      }
+      if (this.stones[idx]) this.damageStone(idx);
       i++;
     }
 
@@ -325,7 +460,7 @@ const Game = {
     this.lines += nLines;
     this.stats.lines++;
     const mult = 1 + 0.5 * (this.streak - 1);
-    const base = cellSet.size * 10 + nLines * 100;
+    const base = clearedCount * 10 + nLines * 100;
     const gained = Math.round(base * mult);
     this.addScore(gained, null);
 
@@ -346,9 +481,7 @@ const Game = {
     }
 
     // all clear bonus
-    let isEmpty = true;
-    for (let j = 0; j < this.board.length; j++) if (this.board[j]) { isEmpty = false; break; }
-    if (isEmpty) {
+    if (this.isBoardEmpty()) {
       this.addScore(500, null);
       this.stats.allclears++;
       this.grantCharge('bomb', true);
@@ -421,6 +554,9 @@ const Game = {
           n++;
           this.clearAnims.push({ x: this.cellCX(x), y: this.cellCY(y), color: PALETTE[this.board[idx] - 1], t: 0, delay: rand(0, 0.05) });
           this.board[idx] = 0;
+        } else if (this.stones[idx]) {
+          n++;
+          this.damageStone(idx, true);
         }
       }
     }
@@ -442,6 +578,13 @@ const Game = {
   useHammer(gx, gy) {
     if (this.state !== 'playing' || this.charges.hammer <= 0) return false;
     const idx = gy * GRID + gx;
+    if (this.stones[idx]) {
+      this.charges.hammer--;
+      this.armed = null;
+      FX.addShake(3);
+      this.damageStone(idx, true);
+      return true;
+    }
     if (!this.board[idx]) { AudioSys.invalid(); return false; }
     const color = PALETTE[this.board[idx] - 1];
     this.board[idx] = 0;
@@ -479,6 +622,7 @@ const Game = {
       }
     }
     this.board.fill(0);
+    this.stones.fill(0);
   },
 
   finishOver() {
@@ -654,13 +798,19 @@ const Game = {
       for (let gx = 0; gx < GRID; gx++) {
         const x = boardX + gx * cell, y = boardY + gy * cell;
         const k = this.board[gy * GRID + gx];
+        const st = this.stones[gy * GRID + gx];
         // slot
         ctx.fillStyle = 'rgba(10, 18, 32, 0.85)';
         ctx.fillRect(x + 1, y + 1, cell - 2, cell - 2);
         ctx.strokeStyle = 'rgba(53,240,255,0.06)';
         ctx.strokeRect(x + 1.5, y + 1.5, cell - 3, cell - 3);
+        // rock
+        if (st) {
+          const spr = stoneSprites[st - 1];
+          if (spr) ctx.drawImage(spr, x, y, cell, cell);
+        }
         // block
-        if (k) {
+        else if (k) {
           const pop = this.popAnims.find(a => a.gx === gx && a.gy === gy);
           let scale = 1;
           if (pop) {
@@ -889,6 +1039,13 @@ const Game = {
     if (c.best !== bestTxt) {
       c.best = bestTxt;
       document.getElementById('bn-best').textContent = bestTxt;
+    }
+
+    const tier = this.tier();
+    const modeTxt = (this.mode === 'rush' ? 'RUSH' : 'CLASSIC') + (tier > 0 ? ' \u00b7 LV' + (tier + 1) : '');
+    if (c.modeTxt !== modeTxt) {
+      c.modeTxt = modeTxt;
+      document.getElementById('mode-label').textContent = modeTxt;
     }
 
     const showStreak = this.streak >= 2;

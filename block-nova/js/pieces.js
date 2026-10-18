@@ -1,5 +1,5 @@
 /* ============================================================
-   BLOCK NOVA — piece shapes, palette, weighted bag
+   BLOCK NOVA — piece shapes, palette, weighted bag + difficulty
    ============================================================ */
 'use strict';
 
@@ -15,7 +15,8 @@ const PALETTE = [
 ];
 
 /* raw shape families — rotations are generated below.
-   c: cells [x,y], k: palette index, w: spawn weight */
+   c: cells [x,y], k: palette index, w: spawn weight.
+   Shapes with >=4 cells count as "big" and grow with difficulty. */
 const RAW_SHAPES = [
   { c: [[0, 0]], k: 2, w: 5 },                                            // single
   { c: [[0, 0], [1, 0]], k: 0, w: 8 },                                    // I2 h
@@ -55,19 +56,26 @@ const SHAPES = [];
       h: maxY + 1,
       color: PALETTE[raw.k],
       k: raw.k,
-      weight: raw.w
+      weight: raw.w,
+      big: raw.c.length >= 4
     });
   }
-  // weighted bag cumulative
-  let acc = 0;
-  for (const s of SHAPES) { acc += s.weight; s.cum = acc; }
-  SHAPES.totalWeight = acc;
 })();
 
-function pickShape() {
-  const r = Math.random() * SHAPES.totalWeight;
-  for (const s of SHAPES) {
-    if (r < s.cum) return s;
+/** tiered weights: big pieces gain, small pieces shrink (floor 0.3) */
+function shapeWeights(tier) {
+  tier = tier || 0;
+  const ws = SHAPES.map(s => Math.max(0.3, s.weight * (s.big ? 1 + 0.4 * tier : 1 - 0.13 * tier)));
+  let total = 0;
+  const cum = ws.map(w => (total += w, total));
+  return { ws, cum, total };
+}
+
+function pickShape(tier) {
+  const { cum, total } = shapeWeights(tier);
+  const r = Math.random() * total;
+  for (let i = 0; i < SHAPES.length; i++) {
+    if (r < cum[i]) return SHAPES[i];
   }
   return SHAPES[0];
 }

@@ -24,6 +24,12 @@ python3 -m http.server 8000
 - **All Clear** — wipe the whole board for +500, confetti and a free bomb.
 - **Fair refills** — the game rerolls the tray so at least one piece always
   fits before the mercy single appears.
+- **Progressive difficulty** — every 10 cleared lines raises the tier (LV1–LV5
+  shown in the HUD): the shape bag shifts toward bigger pieces and rocks start
+  spawning.
+- **Rock cells** — dark stones occupy cells, block placement and count as
+  filled for line completion. A line blast cracks them; a second hit (or a
+  bomb/hammer) shatters them for +50. Max 4 on the board.
 - **Two modes** — Classic (endless) and Rush (2:00 countdown, +2s per line,
   up to 3:00).
 - **Local top-5 tables per mode** + lifetime stats, all in localStorage.
@@ -45,6 +51,17 @@ python3 -m http.server 8000
 | Pause | pause button | `P` / `Esc` |
 | Restart (game over) | buttons | `R` |
 | Mute | speaker button | `M` |
+
+## Android APK
+
+Every push to `block-nova/**` builds an installable APK via GitHub Actions and
+publishes it to the `blocknova-android-latest` release:
+
+```
+https://github.com/zeroonetwo680-bit/my-first-game/releases/download/blocknova-android-latest/BLOCK-NOVA.apk
+```
+
+The bundle vendors its fonts, so the APK is fully offline.
 
 ## Testing
 

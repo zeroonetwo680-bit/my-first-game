@@ -310,6 +310,145 @@ try {
 check('60s stress run without crashes', 'this.__crashes', n => n === 0);
 check('still functional after stress', '["playing","over","dying"].includes(Game.state)', v => v === true);
 
+console.log('--- difficulty tiers & shape bag ---');
+run(`
+Game.startRun('classic');
+this.__t0 = Game.tier();
+Game.lines = 20;
+this.__t2 = Game.tier();
+Game.lines = 100;
+this.__t4 = Game.tier();
+Game.lines = 999;
+this.__tmax = Game.tier();
+const low = shapeWeights(0), high = shapeWeights(4);
+let lowBig = 0, highBig = 0;
+for (let i = 0; i < SHAPES.length; i++) {
+  if (SHAPES[i].big) { lowBig += low.ws[i]; highBig += high.ws[i]; }
+}
+this.__bigShareUp = highBig / high.total > lowBig / low.total;
+this.__smallNeverZero = low.ws.every((w, i) => !SHAPES[i].big || true) && high.ws.every(w => w >= 0.299);
+Game.lines = 0;
+`);
+check('tier 0 at start', 'this.__t0', n => n === 0);
+check('tier 2 at 20 lines', 'this.__t2', n => n === 2);
+check('tier 4 at 100 lines', 'this.__t4', n => n === 4);
+check('tier caps at 4', 'this.__tmax', n => n === 4);
+check('big pieces grow with tier', 'this.__bigShareUp', v => v === true);
+check('weights never vanish (>=0.3)', 'this.__smallNeverZero', v => v === true);
+
+console.log('--- stones: block placement, crack, shatter ---');
+run(`
+Game.startRun('classic');
+Game.board.fill(0);
+Game.stones.fill(0);
+const mk = (cells) => ({ cells, w: 1, h: 1, color: '#fff', k: 0, used: false, spawnT: 1 });
+Game.tray.length = 0;
+Game.tray.push(mk([[0,0]]), mk([[0,0]]), mk([[0,0]]));
+Game.stones[0] = 1;   // intact rock at (0,0)
+this.__blockedOnRock = !Game.canPlace(Game.tray[0], 0, 0);
+this.__okBeside = Game.canPlace(Game.tray[0], 1, 0);
+`);
+check('stone blocks placement', 'this.__blockedOnRock', v => v === true);
+check('placement fine beside stone', 'this.__okBeside', v => v === true);
+
+run(`
+// row 7 full of blocks except (0,7); intact stone at (4,7)
+Game.board.fill(0);
+Game.stones.fill(0);
+for (let x = 1; x < 8; x++) Game.board[7 * 8 + x] = 1;
+Game.stones[7 * 8 + 4] = 1;
+const mk = (cells) => ({ cells, w: 1, h: 1, color: '#fff', k: 0, used: false, spawnT: 1 });
+Game.tray.length = 0;
+Game.tray.push(mk([[0,0]]), mk([[0,0]]), mk([[0,0]]));
+const s0 = Game.score;
+this.__cleared = Game.tryPlace(0, 0, 7);
+let t = 1000;
+for (let i = 0; i < 30; i++) { t += 16.6; __frame(t); }
+this.__cracked = Game.stones[7 * 8 + 4] === 2;
+this.__stillThere = Game.stones[7 * 8 + 4] !== 0;
+this.__rowGone = [...Array(8).keys()].filter(x => x !== 4).every(x => !Game.board[7 * 8 + x]);
+`);
+check('line over intact stone still clears', 'this.__cleared', v => v === true);
+check('stone survives first blast but cracks', 'this.__cracked && this.__stillThere', v => v === true);
+check('board blocks cleared around the stone', 'this.__rowGone', v => v === true);
+
+run(`
+// second clear through the cracked stone destroys it (+50)
+// (placement hole at x=2, cracked stone sits at x=4 and counts as filled)
+Game.stones.fill(0);
+Game.stones[6 * 8 + 4] = 2;
+Game.board.fill(0);
+for (let x = 0; x < 8; x++) if (x !== 2 && x !== 4) Game.board[6 * 8 + x] = 1;
+const mk = (cells) => ({ cells, w: 1, h: 1, color: '#fff', k: 0, used: false, spawnT: 1 });
+Game.tray.length = 0;
+Game.tray.push(mk([[0,0]]), mk([[0,0]]), mk([[0,0]]));
+const s0 = Game.score;
+this.__cleared2 = Game.tryPlace(0, 2, 6);
+this.__gained = Game.score - s0;
+this.__shattered = Game.stones[6 * 8 + 4] === 0;
+`);
+check('cracked stone shatters on second blast', 'this.__cleared2 && this.__shattered', v => v === true);
+check('shatter pays +50 bonus (>=225 total)', 'this.__gained', n => n >= 225);
+
+run(`
+// bomb wipes an intact stone instantly
+Game.board.fill(0);
+Game.stones.fill(0);
+Game.stones[0] = 1;
+Game.charges.bomb = 1;
+this.__boom = Game.useBomb(0, 0);
+this.__stoneGone = Game.stones[0] === 0;
+this.__bombUsed = Game.charges.bomb === 0;
+`);
+check('bomb destroys intact stone', 'this.__boom && this.__stoneGone && this.__bombUsed', v => v === true);
+
+run(`
+// hammer can target a stone directly
+Game.board.fill(0);
+Game.stones.fill(0);
+Game.stones[3 * 8 + 3] = 1;
+Game.charges.hammer = 1;
+this.__whack = Game.useHammer(3, 3);
+this.__stoneGone2 = Game.stones[3 * 8 + 3] === 0;
+`);
+check('hammer crushes a stone', 'this.__whack && this.__stoneGone2', v => v === true);
+
+console.log('--- stone spawning tied to difficulty ---');
+run(`
+Game.startRun('classic');
+Game.board.fill(0);
+Game.stones.fill(0);
+this.__noneAtTier0 = Game.maybeSpawnStones() === undefined && !Game.stones.some(v => v);
+Game.lines = 60;   // tier 4
+let spawnedAny = false;
+for (let k = 0; k < 30; k++) {
+  Game.board.fill(0); Game.stones.fill(0);
+  Game.maybeSpawnStones();
+  if (Game.stones.some(v => v)) { spawnedAny = true; break; }
+}
+this.__spawnedAtHighTier = spawnedAny;
+// cap test
+Game.board.fill(0); Game.stones.fill(0);
+const placed = Game.spawnStones(10);
+this.__capPlaced = placed;
+this.__capTotal = Game.stones.reduce((a, v) => a + (v ? 1 : 0), 0);
+Game.lines = 0;
+`);
+check('no stones at tier 0', 'this.__noneAtTier0', v => v === true);
+check('stones appear at high tier', 'this.__spawnedAtHighTier', v => v === true);
+check('stone spawn respects board cap (<=4)', 'this.__capPlaced <= 4 && this.__capTotal <= 4', v => v === true);
+
+run(`
+// all-clear requires stones gone too
+Game.startRun('classic');
+Game.board.fill(0); Game.stones.fill(0);
+Game.lines = 0;
+this.__emptyNoStones = Game.isBoardEmpty();
+Game.stones[2] = 1;
+this.__emptyWithStone = Game.isBoardEmpty();
+`);
+check('isBoardEmpty false with a stone', 'this.__emptyNoStones && !this.__emptyWithStone', v => v === true);
+
 console.log('--- perf ---');
 run(`
 Game.startRun('classic');
