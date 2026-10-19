@@ -130,7 +130,8 @@ function check(name, code, expect) {
 console.log('--- boot & defs ---');
 check('boots to menu', 'Game.state', s => s === 'menu');
 check('logical arena is 900x540', 'W + "x" + H', s => s === '900x540');
-check('two fighters defined', 'Object.keys(FIGHTER_DEFS).length', n => n === 2);
+check('three fighters defined', 'Object.keys(FIGHTER_DEFS).length', n => n === 3);
+check('VOLT speed sits between BLAZE and TITAN', 'FIGHTER_DEFS.volt.speed < FIGHTER_DEFS.blaze.speed && FIGHTER_DEFS.volt.speed > FIGHTER_DEFS.titan.speed', v => v === true);
 check('blaze is faster than titan', 'FIGHTER_DEFS.blaze.speed > FIGHTER_DEFS.titan.speed', v => v === true);
 check('titan has more hp than blaze', 'FIGHTER_DEFS.titan.hp > FIGHTER_DEFS.blaze.hp', v => v === true);
 check('pool recycles objects', '(() => { const p = new Pool(() => ({ active: false }), 3); const a = p.obtain(); a.active = true; const b = p.obtain(); b.active = true; const c = p.obtain(); c.active = true; const d = p.obtain(); a.active = false; const e = p.obtain(); return d === null && e === a && p.items[1] === b; })()', v => v === true);
@@ -327,6 +328,7 @@ o.hp = 2; o.state = 'idle';
 f.state = 'idle'; f.x = 400; o.x = 480;
 __frame(t);
 Game.resolveHit(f, o, f.def.punch, 'punch');
+this.__zoomAtKO = Game.cam.zoom;
 this.__koState = Game.state;
 this.__loser = o.state;
 this.__w1 = Game.wins[0];
@@ -340,6 +342,7 @@ check('lethal hit ends the round', 'this.__koState', s => s === 'roundend');
 check('loser is knocked out', 'this.__loser', s => s === 'ko');
 check('round win awarded to p1', 'this.__w1', n => n === 1);
 check('K.O. banner shown', 'this.__koBanner', s => s === 'K.O.!');
+check('KO punch zooms the camera', 'this.__zoomAtKO > 1', v => v === true);
 check('next round starts (best of 3)', 'this.__round2', n => n === 2);
 check('round-win pip lights up', 'this.__pip', v => v === true);
 
@@ -567,6 +570,81 @@ this.__diff = store.get('nff.diff', 'normal');
 `);
 check('fighter pick persists', 'this.__p1', s => s === 'titan');
 check('difficulty persists', 'this.__diff', s => s === 'hard');
+
+console.log('--- VOLT: parry mechanic ---');
+run(`
+const f = Game.makeFighter('blaze', 0), o = Game.makeFighter('volt', 1);
+f.state = 'idle'; o.state = 'block'; o.st = 0;
+o.hp = o.maxHp; o.meter = 0;
+Game.resolveHit(f, o, f.def.punch, 'punch');
+this.__parryHp = o.hp;
+this.__parryStun = f.state === 'hit' && f.stunT === 0.55;
+this.__parryMeter = o.meter;
+this.__parryText = (() => { let found = null; for (const t of FX.texts.items) if (t.active && t.text === 'PARRY!') found = t.text; return found; })();
+// a stale (long-held) block gets normal chip damage
+const f2 = Game.makeFighter('blaze', 0), o2 = Game.makeFighter('volt', 1);
+o2.state = 'block'; o2.st = 1; o2.hp = 50;
+Game.resolveHit(f2, o2, f2.def.punch, 'punch');
+this.__chipHp = o2.hp;
+this.__hasParry = !!FIGHTER_DEFS.volt.parry && !FIGHTER_DEFS.blaze.parry && !FIGHTER_DEFS.titan.parry;
+`);
+check('only VOLT has the parry trait', 'this.__hasParry', v => v === true);
+check('parry negates all damage', 'this.__parryHp', n => n === 105);
+check('parry stuns the attacker (0.55s)', 'this.__parryStun', v => v === true);
+check('parry rewards meter (+18)', 'this.__parryMeter', n => n >= 18);
+check('PARRY! callout spawned', 'this.__parryText', s => s === 'PARRY!');
+check('stale block still chips normally', 'Math.abs(this.__chipHp - (50 - 6.65 * 0.18)) < 0.001', v => v === true);
+
+console.log('--- roster cycling ---');
+run(`
+Game.p1Id = 'volt';
+Game.startMatch();
+this.__oppOfVolt = Game.fighters[1].def.id;
+Game.p1Id = 'blaze';
+Game.startMatch();
+this.__pair = Game.fighters[0].def.id + '+' + Game.fighters[1].def.id;
+`);
+check('VOLT faces BLAZE next in the roster cycle', 'this.__oppOfVolt', s => s === 'blaze');
+check('restored default pairing BLAZE+TITAN', 'this.__pair', s => s === 'blaze+titan');
+
+console.log('--- punch -> kick combo cancel ---');
+run(`
+let t = 200000;
+for (let i = 0; i < 95 && Game.state !== 'fighting'; i++) { t += 16.6; __frame(t); }
+const f = Game.fighters[0], o = Game.fighters[1];
+Game.ais[1] = null;
+f.state = 'idle'; o.state = 'idle'; o.attack = null; o.vx = 0;
+f.x = 400; o.x = 480;
+__frame(t);
+Game.tryAttack(f, 'punch');
+for (let i = 0; i < 7; i++) { t += 16.6; __frame(t); }
+this.__connected = f.hitDone && o.hp < o.maxHp;
+Game.updateFighter(f, { left: false, right: false, block: false, punch: false, kick: true, special: false, dash: false }, o, 0.016);
+this.__cancelState = f.state;
+this.__cancelAtk = f.attack === f.def.kick;
+`);
+check('punch connected before the cancel', 'this.__connected', v => v === true);
+check('kick during a connected punch cancels into kick', 'this.__cancelState', s => s === 'kick');
+check('canceled kick uses the kick definition', 'this.__cancelAtk', v => v === true);
+
+console.log('--- dash afterimages + double-tap dash ---');
+run(`
+const f = Game.fighters[0], o = Game.fighters[1];
+f.state = 'idle'; f.dashCd = 0; f.x = 300; f.vx = 0;
+FX.clear();
+Game.tryDash(f, 1);
+Game.updateFighter(f, { left: false, right: false, block: false, punch: false, kick: false, special: false, dash: false }, o, 0.016);
+this.__ghosts = FX.ghosts.filter(g => g.active).length;
+Input.touch.dashUntil = 0;
+Input._tapTimes = Object.create(null);
+Input.tapDir('t-left');
+Input.tapDir('t-left');
+this.__dashArm = Input.touch.dashUntil > performance.now();
+this.__dashIn = Input.playerInput(0).dash;
+`);
+check('dash leaves neon afterimages', 'this.__ghosts', n => n >= 1);
+check('double-tap a direction arms the dash', 'this.__dashArm', v => v === true);
+check('armed double-tap reaches player input', 'this.__dashIn', v => v === true);
 
 console.log('--- 60s stress: cpu match churn ---');
 run(`

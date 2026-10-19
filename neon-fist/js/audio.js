@@ -90,6 +90,11 @@ const AudioSys = {
 
   dash() { this._noise(0.16, 'bandpass', 500, 1800, 0.14); },
 
+  parry() {
+    this._tone('square', 700, 1500, 0.09, 0.22);
+    this._tone('triangle', 1800, 2400, 0.12, 0.14);
+  },
+
   novaCharge() {
     this._tone('sawtooth', 90, 440, 0.5, 0.2);
     this._noise(0.5, 'bandpass', 300, 2600, 0.14);

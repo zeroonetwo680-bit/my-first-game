@@ -4,6 +4,8 @@
 'use strict';
 
 const FX = {
+  ghosts: Array.from({ length: 26 }, () => ({ active: false, joints: null, col: '#fff', acc: '#fff', dir: 1, life: 0, max: 1 })),
+
   particles: new Pool(() => ({
     active: false, x: 0, y: 0, vx: 0, vy: 0, life: 0, maxLife: 1,
     size: 4, color: '#fff', kind: 'glow', drag: 2, spin: 0, rot: 0, grow: 0
@@ -112,12 +114,42 @@ const FX = {
       t.y += t.vy * dt;
       t.vy *= Math.max(0, 1 - 2.2 * dt);
     }
+
+    for (const g of this.ghosts) {
+      if (!g.active) continue;
+      g.life -= dt;
+      if (g.life <= 0) g.active = false;
+    }
   },
 
   clear() {
     this.particles.deactivateAll();
     this.texts.deactivateAll();
+    for (const g of this.ghosts) g.active = false;
     this.shake = 0; this.shakeX = 0; this.shakeY = 0;
+  },
+
+  /** snapshot a fighter's pose as an afterimage frame */
+  pushGhost(f) {
+    let g = null;
+    for (const c of this.ghosts) { if (!c.active) { g = c; break; } }
+    if (!g) {
+      g = this.ghosts[0];
+      for (const c of this.ghosts) if (c.life < g.life) g = c; // recycle oldest
+    }
+    g.active = true;
+    g.joints = computePose(f, (typeof Game !== 'undefined' && Game.time) || 0);
+    g.col = f.def.color;
+    g.acc = f.def.accent;
+    g.dir = f.dir;
+    g.life = g.max = 0.26;
+  },
+
+  drawGhosts(ctx) {
+    for (const g of this.ghosts) {
+      if (!g.active) continue;
+      drawGhostBody(ctx, g);
+    }
   },
 
   drawAdditive(ctx) {

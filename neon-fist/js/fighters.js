@@ -26,6 +26,17 @@ const FIGHTER_DEFS = {
     punch: { dmg: 9, reach: 112, startup: 0.11, active: 0.11, recovery: 0.26, kb: 170, stun: 0.3 },
     kick: { dmg: 15, reach: 145, startup: 0.19, active: 0.13, recovery: 0.38, kb: 290, stun: 0.4 },
     special: { dmg: 30, dashDist: 470, active: 0.36, recovery: 0.5, kb: 560, stun: 0.6 }
+  },
+  volt: {
+    id: 'volt', name: 'VOLT',
+    color: '#ff3d81', accent: '#35f0ff',
+    desc: 'Technical duelist. Perfect blocks PARRY!',
+    hp: 105, speed: 290, dashSpeed: 640,
+    dmgMul: 1.0,
+    parry: 0.22,
+    punch: { dmg: 8, reach: 105, startup: 0.07, active: 0.09, recovery: 0.18, kb: 140, stun: 0.27 },
+    kick: { dmg: 12, reach: 135, startup: 0.14, active: 0.11, recovery: 0.28, kb: 240, stun: 0.36 },
+    special: { dmg: 26, dashDist: 620, active: 0.26, recovery: 0.42, kb: 500, stun: 0.55 }
   }
 };
 
@@ -294,4 +305,24 @@ function drawPortrait(canvasEl, def) {
   g.fillStyle = def.accent;
   g.beginPath(); g.arc(38, 22, 2.6, 0, TAU); g.fill();
   g.beginPath(); g.arc(14, 25, 2.2, 0, TAU); g.fill();
+}
+
+
+/** translucent neon afterimage from a pose snapshot (dash / NOVA trails) */
+function drawGhostBody(ctx, g) {
+  const j = g.joints;
+  const a = Math.max(0, (g.life / g.max) * 0.45);
+  ctx.globalAlpha = a;
+  const segs = [
+    [j.neck, j.hip, 9], [j.hip, j.kneeF, 7], [j.kneeF, j.footF, 6],
+    [j.hip, j.kneeB, 7], [j.kneeB, j.footB, 6],
+    [j.shoulderF, j.elbowF, 6], [j.elbowF, j.handF, 5],
+    [j.shoulderB, j.elbowB, 6], [j.elbowB, j.handB, 5]
+  ];
+  for (const [p, q, w] of segs) limb(ctx, p, q, g.col, w);
+  ctx.fillStyle = g.col;
+  ctx.beginPath();
+  ctx.arc(j.head.x, j.head.y, BODY.headR * 0.9, 0, TAU);
+  ctx.fill();
+  ctx.globalAlpha = 1;
 }

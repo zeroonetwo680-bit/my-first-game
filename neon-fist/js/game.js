@@ -37,6 +37,7 @@ const Game = {
   matchResult: '',
 
   hudCache: {},
+  cam: { zoom: 1 },
 
   /* ---------------- lifecycle ---------------- */
   init() {
@@ -93,7 +94,7 @@ const Game = {
     AudioSys.init(); AudioSys.resume();
     const ids = Object.keys(FIGHTER_DEFS);
     const p1 = this.p1Id;
-    const p2 = ids.find(i => i !== p1);
+    const p2 = ids[(ids.indexOf(p1) + 1) % ids.length];
     this.fighters = [this.makeFighter(p1, 0), this.makeFighter(p2, 1)];
     this.wins = [0, 0];
     this.round = 1;
@@ -220,6 +221,23 @@ const Game = {
 
     // blocked?
     if (vic.state === 'block') {
+      // VOLT's parry: a block started just before impact negates and punishes
+      if (vic.def.parry && vic.st <= vic.def.parry) {
+        att.state = 'hit';
+        att.st = 0;
+        att.stunT = 0.55;
+        att.vx = -att.dir * 200;
+        vic.meter = Math.min(100, vic.meter + 18);
+        FX.impactStar(hx, hy, '#ffd24d');
+        FX.ring(hx, hy, '#ffd24d', 70, 0.4);
+        FX.text(hx, hy - 34, 'PARRY!', '#ffd24d', 20);
+        AudioSys.parry();
+        this.screenFlash(0.3);
+        this.hitStop = Math.max(this.hitStop, 0.12);
+        FX.addShake(4);
+        Platform3.vibrate(20);
+        return;
+      }
       const chip = atk.dmg * 0.18 * att.def.dmgMul;
       vic.hp = Math.max(0, vic.hp - chip);
       vic.vx = Math.sign(vic.x - att.x) * 90;
@@ -267,6 +285,7 @@ const Game = {
       AudioSys.novaHit();
       this.screenFlash(0.5);
       this.slowmo = 0.5;
+      this.cam.zoom = Math.max(this.cam.zoom, 1.05);
       FX.ring(hx, hy, att.def.color, 90, 0.5);
     } else if (kind === 'kick') AudioSys.kickHit();
     else AudioSys.punchHit();
@@ -278,6 +297,13 @@ const Game = {
       el.classList.remove('show');
       void el.offsetWidth;
       el.classList.add('show');
+    }
+    if (this.mode === '2p' && att.slot === 1 && vic.comboOn >= 2) {
+      const el2 = document.getElementById('combo-p2');
+      el2.textContent = vic.comboOn + ' HITS!';
+      el2.classList.remove('show');
+      void el2.offsetWidth;
+      el2.classList.add('show');
     }
 
     if (vic.hp <= 0) this.onKO(vic, att);
@@ -293,6 +319,7 @@ const Game = {
     winner.wins++;
     this.wins[winner.slot] = winner.wins;
     this.banner('K.O.!');
+    this.cam.zoom = 1.09;
     AudioSys.ko();
     this.screenFlash(0.55);
     FX.addShake(14);
@@ -378,6 +405,7 @@ const Game = {
   update(dt) {
     this.time = (this.time || 0) + dt;
     this.stateT += dt;
+    if (this.cam.zoom !== 1) this.cam.zoom += (1 - this.cam.zoom) * Math.min(1, 3 * dt);
 
     if (this.state === 'intro' && this.stateT > 1.35) this.beginFight();
 
@@ -453,6 +481,16 @@ const Game = {
       case 'kick': {
         const atk = f.attack;
         f.attackPhase = f.st / (atk.startup + atk.active + atk.recovery);
+        // combo cancel: a connected punch flows straight into a kick
+        if (f.state === 'punch' && inp.kick && f.hitDone && f.st >= atk.startup) {
+          f.state = 'kick';
+          f.st = 0;
+          f.attack = f.def.kick;
+          f.attackPhase = 0;
+          f.hitDone = false;
+          AudioSys.whoosh();
+          break;
+        }
         const inActive = f.st >= atk.startup && f.st <= atk.startup + atk.active;
         if (inActive && !f.hitDone) {
           const dist = Math.abs(opp.x - f.x);
@@ -474,6 +512,7 @@ const Game = {
         // dash toward the opponent
         if (f.st <= atk.active && !f.hitDone) {
           f.x += f.dir * (atk.dashDist / atk.active) * dt;
+          FX.pushGhost(f);
           FX.emit({
             x: f.x - f.dir * 26, y: BODY.ground - 80 + rand(-20, 20),
             vx: -f.dir * rand(60, 160), vy: rand(-30, 30),
@@ -498,11 +537,11 @@ const Game = {
 
         if (f.dashT > 0) {
           f.dashT -= dt;
-          f.state = f.state === 'walk' ? 'walk' : f.state;
+          FX.pushGhost(f);
         }
 
         if (inp.block) {
-          f.state = 'block';
+          if (f.state !== 'block') { f.state = 'block'; f.st = 0; }
         } else if (f.state === 'block') {
           f.state = 'idle';
         }
@@ -549,6 +588,12 @@ const Game = {
     ctx.save();
     ctx.translate(viewOX + FX.shakeX, viewOY + FX.shakeY);
     ctx.scale(viewScale, viewScale);
+    const z = this.cam.zoom;
+    if (z !== 1) {
+      ctx.translate(W / 2, H / 2);
+      ctx.scale(z, z);
+      ctx.translate(-W / 2, -H / 2);
+    }
 
     this.renderArena();
     const [a, b] = this.fighters;
@@ -557,6 +602,7 @@ const Game = {
     for (const f of order) drawFighter(ctx, f, this.time);
 
     ctx.globalCompositeOperation = 'lighter';
+    FX.drawGhosts(ctx);
     FX.drawAdditive(ctx);
     ctx.globalCompositeOperation = 'source-over';
     FX.drawTexts(ctx);
@@ -735,8 +781,17 @@ const Platform3 = {
    ============================================================ */
 const Input = {
   keys: Object.create(null),
-  touch: { left: false, right: false, block: false, punch: false, kick: false, special: false, dash: false },
+  touch: { left: false, right: false, block: false, punch: false, kick: false, special: false, dashUntil: 0 },
+  _tapTimes: Object.create(null),
   edge: Object.create(null),
+
+  /** double-tap a direction pad within 260ms -> brief dash window */
+  tapDir(id) {
+    const t = performance.now();
+    const last = this._tapTimes[id] === undefined ? -1e9 : this._tapTimes[id];
+    this._tapTimes[id] = t;
+    if (t - last < 260) this.touch.dashUntil = t + 110;
+  },
 
   init() {
     window.addEventListener('keydown', (e) => {
@@ -752,6 +807,7 @@ const Input = {
       const el = document.getElementById(id);
       el.addEventListener('pointerdown', (e) => {
         this.touch[prop] = true;
+        if (prop === 'left' || prop === 'right') this.tapDir(id);
         el.classList.add('pressed');
         e.preventDefault();
       });
@@ -779,7 +835,7 @@ const Input = {
         punch: !!(k['KeyF'] || t.punch),
         kick: !!(k['KeyG'] || t.kick),
         special: !!(k['KeyH'] || t.special),
-        dash: !!k['ShiftLeft']
+        dash: !!(k['ShiftLeft'] || t.dashUntil > performance.now())
       };
     }
     return {
@@ -836,7 +892,7 @@ function wireUI() {
 
   const hint = document.getElementById('nf-controls-hint');
   if (IS_TOUCH) {
-    hint.innerHTML = 'On-screen buttons: <b>move</b> + BLOCK / PUNCH / KICK / NOVA.<br>Fill the amber meter, then unleash the NOVA dash!';
+    hint.innerHTML = 'On-screen buttons: <b>move</b> + BLOCK / PUNCH / KICK / NOVA.<br><b>Double-tap &#9664; or &#9654;</b> to DASH &bull; Fill the amber meter, then unleash the NOVA!';
   } else {
     hint.innerHTML =
       'P1: <span class="key">A</span><span class="key">D</span> move &bull; <span class="key">S</span> block &bull; <span class="key">F</span> punch &bull; <span class="key">G</span> kick &bull; <span class="key">H</span> NOVA &bull; <span class="key">SHIFT</span> dash<br>' +
