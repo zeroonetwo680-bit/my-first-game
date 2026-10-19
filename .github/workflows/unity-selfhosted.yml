@@ -1,0 +1,35 @@
+# Unity pipeline running ON YOUR OWN PC (GitHub self-hosted runner).
+# Setup guide: unity/README.md section 5.
+#
+# 1) GitHub > Settings > Actions > Runners > New self-hosted runner (run config.cmd on your PC)
+# 2) Uncomment the "push:" block below to build every change automatically.
+name: Unity local pipeline (self-hosted runner)
+
+on:
+  workflow_dispatch:
+  # push:
+  #   paths: ['unity/**', 'scripts/unity-local-*']
+
+jobs:
+  build-on-my-pc:
+    name: Build on my PC
+    runs-on: self-hosted
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Unity tests + build + install (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./scripts/unity-local-build.ps1 -BuildTarget android -InstallDevice
+
+      - name: Unity tests + build (Linux/macOS)
+        if: runner.os != 'Windows'
+        run: bash scripts/unity-local-build.sh --build-target android
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: unity-build-local
+          path: |
+            unity/Builds/**
+            unity/TestResults/**
+          if-no-files-found: warn

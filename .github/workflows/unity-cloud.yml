@@ -1,0 +1,66 @@
+# Unity cloud build on GitHub Actions (game-ci) — manual trigger for now.
+# Requires secrets: UNITY_LICENSE (contents of Unity_lic.ulf), UNITY_EMAIL, UNITY_PASSWORD.
+# Guide: unity/README.md section 6. The repo is public -> Linux minutes are free.
+name: Unity cloud build (game-ci)
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_target:
+        description: 'Build target (Android / WebGL)'
+        required: false
+        default: 'Android'
+
+jobs:
+  test-and-build:
+    name: Test + build (cloud)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify Unity license secret
+        id: lic
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+        run: |
+          if [ -z "$UNITY_LICENSE" ]; then
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::UNITY_LICENSE secret missing - see unity/README.md (step 2). Skipping build."
+          else
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Unity tests (EditMode + PlayMode)
+        if: steps.lic.outputs.ok == 'true'
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity
+          testMode: all
+          artifactsPath: unity-test-results
+
+      - name: Unity build
+        if: steps.lic.outputs.ok == 'true'
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          projectPath: unity
+          targetPlatform: ${{ github.event.inputs.build_target }}
+          buildName: NEON-UNITY
+          buildsPath: unity/Builds
+          androidExportType: apk
+
+      - uses: actions/upload-artifact@v4
+        if: steps.lic.outputs.ok == 'true'
+        with:
+          name: unity-cloud-build
+          path: |
+            unity/Builds/**
+            unity-test-results/**
+          if-no-files-found: warn
