@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 rm -rf www
-mkdir -p www
+mkdir -p www/assets/fonts
 cp -r block-nova/* www/
 rm -rf www/test www/README.md www/assets/icon-1024.png
 
