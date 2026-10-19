@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>NEON FIST — Neon Fighting Arena</title>
+<meta name="description" content="1v1 neon fighting game: combos, block, dash and a cinematic NOVA special. Vs CPU or 2-player on one keyboard.">
+<meta name="theme-color" content="#04060f">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='13' width='26' height='7' rx='3.5' transform='rotate(-18 16 16)' fill='%2335f0ff'/%3E%3Ccircle cx='24' cy='9' r='4' fill='%23ff3d81'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <!-- ======================= FIGHT HUD ======================= -->
+  <div id="hud" class="hidden">
+    <div class="fighter-side left">
+      <div class="name-tag" id="name-p1">BLAZE</div>
+      <div class="hp-track"><i id="hp-p1" class="hp-fill"></i><i id="hp-ghost-p1" class="hp-ghost"></i></div>
+      <div class="meter-track"><i id="mt-p1"></i><b id="mt-p1-txt"></b></div>
+      <div class="pips" id="pips-p1"><i></i><i></i></div>
+    </div>
+    <div class="clock-wrap"><div id="clock">60</div><div id="round-label">ROUND 1</div></div>
+    <div class="fighter-side right">
+      <div class="name-tag" id="name-p2">TITAN</div>
+      <div class="hp-track flip"><i id="hp-p2" class="hp-fill"></i><i id="hp-ghost-p2" class="hp-ghost"></i></div>
+      <div class="meter-track"><i id="mt-p2"></i><b id="mt-p2-txt"></b></div>
+      <div class="pips" id="pips-p2"><i></i><i></i></div>
+    </div>
+    <div class="combo-pop left" id="combo-p1"></div>
+    <div class="combo-pop right" id="combo-p2"></div>
+    <div class="hud-buttons">
+      <button id="nf-mute" class="icon-btn" aria-label="Sound">&#9834;</button>
+      <button id="nf-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
+    </div>
+  </div>
+
+  <div id="nf-banner"></div>
+  <div id="nf-flash"></div>
+  <div id="vignette"></div>
+
+  <!-- ======================= TOUCH CONTROLS ======================= -->
+  <div id="touch-ui" class="hidden">
+    <div class="t-move">
+      <div id="t-left" class="tbtn">&#9664;</div>
+      <div id="t-right" class="tbtn">&#9654;</div>
+    </div>
+    <div class="t-acts">
+      <div id="t-block" class="tbtn small">&#128274;<span>BLOCK</span></div>
+      <div id="t-punch" class="tbtn">&#128074;<span>PUNCH</span></div>
+      <div id="t-kick" class="tbtn">&#129361;<span>KICK</span></div>
+      <div id="t-spec" class="tbtn spec">&#9889;<span>NOVA</span></div>
+    </div>
+  </div>
+
+  <!-- ======================= START SCREEN ======================= -->
+  <div id="nf-start" class="screen visible">
+    <div class="screen-inner">
+      <div class="logo-wrap">
+        <h1 class="logo nf-logo">NEON<span>FIST</span></h1>
+        <p class="tagline">1v1 NEON FIGHTING ARENA</p>
+      </div>
+
+      <div class="nf-row-label">MODE</div>
+      <div class="mode-row">
+        <button id="btn-vs-cpu" class="btn primary big">VS CPU</button>
+        <button id="btn-2p" class="btn big alt-btn">2 PLAYERS</button>
+      </div>
+
+      <div class="nf-row-label">DIFFICULTY</div>
+      <div class="diff-row">
+        <button class="diff-btn" data-diff="easy">EASY</button>
+        <button class="diff-btn active" data-diff="normal">NORMAL</button>
+        <button class="diff-btn" data-diff="hard">HARD</button>
+      </div>
+
+      <div class="nf-row-label">YOUR FIGHTER</div>
+      <div class="roster" id="roster"></div>
+
+      <div id="nf-controls-hint" class="hint"></div>
+      <div id="nf-stats" class="lifetime"></div>
+    </div>
+  </div>
+
+  <!-- ======================= PAUSE ======================= -->
+  <div id="nf-pausescreen" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm">PAUSED</h1>
+      <button id="nf-resume" class="btn primary big">RESUME</button>
+      <button id="nf-restart" class="btn">RESTART MATCH</button>
+      <button id="nf-quit" class="btn">QUIT TO MENU</button>
+    </div>
+  </div>
+
+  <!-- ======================= MATCH OVER ======================= -->
+  <div id="nf-over" class="screen">
+    <div class="screen-inner">
+      <h1 class="title-sm wrecked" id="nf-over-title">BLAZE WINS!</h1>
+      <div id="nf-new-best" class="new-best hidden">&#9733; NEW RECORD &#9733;</div>
+      <div class="stats-grid">
+        <div class="stat main"><label>ROUNDS</label><b id="ov-rounds">2-1</b></div>
+        <div class="stat"><label>MAX COMBO</label><b id="ov-combo">x5</b></div>
+        <div class="stat"><label>DAMAGE</label><b id="ov-dmg">0</b></div>
+        <div class="stat"><label>SPECIALS</label><b id="ov-spec">0</b></div>
+      </div>
+      <div id="nf-record-line" class="lifetime"></div>
+      <button id="nf-again" class="btn primary big">REMATCH</button>
+      <button id="nf-menu" class="btn">MENU</button>
+      <p class="hint">R = instant rematch</p>
+    </div>
+  </div>
+</div>
+
+<noscript><p style="color:#fff;font-family:sans-serif;padding:2em">This game requires JavaScript.</p></noscript>
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/fighters.js"></script>
+<script src="js/ai.js"></script>
+<script src="js/game.js"></script>
+</body>
+</html>
