@@ -49,6 +49,7 @@ const Game = {
     this.canvas = canvas;
     this.ctx = canvas.getContext ? canvas.getContext('2d') : null;
     this.load();
+    if (typeof Art !== 'undefined') Art.load();
     Input.init(canvas);
     AudioSys.init();
     this.bindUi();
@@ -582,17 +583,27 @@ const Game = {
       ctx.arc(sx - 40 - i * 26, GROUND_Y - 70 + off + Math.sin(t * 3 + i) * 14, 34 + i * 6, 0, Math.PI * 2);
       ctx.fill();
     }
-    // bots
+    // bots — real sprites when the atlas is loaded, glowing dots otherwise
+    const art = typeof Art !== 'undefined' && Art.ready;
     for (let i = 0; i < 7; i++) {
       const bx = sx - 20 + Math.sin(t * 2.4 + i * 1.7) * 26 - i * 5;
       const by = GROUND_Y - 78 + Math.sin(t * 3.1 + i * 2.1) * 26;
-      const r = 7 + ((i * 37) % 5);
-      ctx.fillStyle = 'rgba(255,59,92,' + (0.16 + close * 0.22) + ')';
-      ctx.beginPath(); ctx.arc(bx, by, r * 2.2, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = i % 2 ? '#ff3b5c' : '#ff6a8a';
-      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = '#ffd24d';
-      ctx.fillRect(bx - 2, by - 2, 4, 4);
+      const wasp = i % 3 === 1;
+      ctx.fillStyle = 'rgba(255,59,92,' + (0.12 + close * 0.2) + ')';
+      ctx.beginPath(); ctx.arc(bx, by, (wasp ? 20 : 27) + close * 6, 0, Math.PI * 2); ctx.fill();
+      let ok = false;
+      if (art) {
+        ok = Art.drawBot(ctx, wasp ? 'wasp' : 'hunter', bx, by,
+          (wasp ? 26 : 34) + close * 3, 0.85 + close * 0.15,
+          Math.sin(t * 2.2 + i) * 0.08);
+      }
+      if (!ok) {
+        const r = 7 + ((i * 37) % 5);
+        ctx.fillStyle = i % 2 ? '#ff3b5c' : '#ff6a8a';
+        ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#ffd24d';
+        ctx.fillRect(bx - 2, by - 2, 4, 4);
+      }
     }
     // gap meter
     const w = 260, x0 = this.W / 2 - w / 2, y0 = 18;

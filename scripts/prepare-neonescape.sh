@@ -7,7 +7,7 @@ cd "$(dirname "$0")/.."
 rm -rf www
 mkdir -p www/assets/fonts
 cp -r neon-escape/* www/
-rm -rf www/test www/README.md www/assets/icon-1024.png
+rm -rf www/test www/tools www/README.md www/node_modules www/package*.json www/assets/icon-1024.png www/assets/art
 
 # ---- vendor Google Fonts locally ----
 UA="Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36"

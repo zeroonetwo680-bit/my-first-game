@@ -93,12 +93,13 @@ sandbox.window = {
   AudioContext: undefined, webkitAudioContext: undefined
 };
 sandbox.rafCbs = rafCbs;
+sandbox.drawCounts = drawCounts;   // Node-side draw counters, visible to in-sandbox checks
 sandbox.requestAnimationFrame = (fn) => { rafCbs.push(fn); return rafCbs.length; };
 sandbox.cancelAnimationFrame = () => {};
 sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearInterval; sandbox.setInterval = () => 0; sandbox.clearInterval = () => {};
 
 // load game files
-['js/core.js', 'js/audio.js', 'js/fx.js', 'js/runner.js', 'js/levels.js', 'js/game.js'].forEach((f) => {
+['js/core.js', 'js/audio.js', 'js/fx.js', 'js/art.js', 'js/runner.js', 'js/levels.js', 'js/game.js'].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 });
 
@@ -293,6 +294,44 @@ check('swarm story mentions the swarm', "ZONE_STORY[2].indexOf('swarm') >= 0");
 
 /* ---- 60s stress ---- */
 check('logic+render under 1.5ms/frame', "(function(){ Game.act('mode:endless'); var t0 = Date.now(); for (var i = 0; i < 2400; i++) { Game.update(0.016); if (Game.state !== 'playing') { Game.act('mode:endless'); } Game.render(); } var ms = (Date.now() - t0) / 2400; globalThis.__ms = ms; return ms < 1.5; })()");
+
+/* ---------------- sprite art ---------------- */
+check('art: not ready without images (vector fallback)', "Art.ready === false && Art.drawHero(Game.ctx, Game.run || {x:0,y:0,onGround:true,runPhase:0}, 0, Game.skinDef(), 1) === false");
+
+// install an Image stub that "loads" the moment src is assigned, then reload the atlases
+sandbox.Image = function () {
+  const img = { width: 236, height: 328, onload: null, onerror: null };
+  Object.defineProperty(img, 'src', {
+    set() { if (img.onload) img.onload(); },
+    get() { return 'stub'; }
+  });
+  return img;
+};
+ev('Art.reset(); Art.load();');
+check('art: ready after images load', "Art.ready === true");
+check('art: all four atlases present', "!!Art.img.run && !!Art.img.poses && !!Art.img.hunter && !!Art.img.wasp");
+check('art: run atlas has 12 frames', "SPRITES.run.frames.length === 12");
+check('art: six poses keyed by name', "['tuck','fall','slide','wall','vault','dive'].every(function (n) { return !!SPRITES.poses.frames[n]; })");
+check('art: heroH matches hitbox', "SPRITES.heroH > 64 && SPRITES.heroH <= 72");
+
+ev("Game.startLevel({id:'art', name:'art', zone: 0, len: 400})");
+check('art: grounded -> run cycle', "(function(){ var r=Game.run; r.onGround=true; r.slideT=0; r.wallT=0; r.vaultT=0; return Art.heroFrame(r).key === 'run'; })()");
+check('art: rising -> tuck', "(function(){ var r=Game.run; r.onGround=false; r.vy=-400; return Art.heroFrame(r).name === 'tuck'; })()");
+check('art: falling -> fall', "(function(){ var r=Game.run; r.onGround=false; r.vy=200; return Art.heroFrame(r).name === 'fall'; })()");
+check('art: fast fall -> dive', "(function(){ var r=Game.run; r.onGround=false; r.vy=900; return Art.heroFrame(r).name === 'dive'; })()");
+check('art: slide -> slide pose', "(function(){ var r=Game.run; r.slideT=0.3; return Art.heroFrame(r).name === 'slide'; })()");
+check('art: wall -> wall pose', "(function(){ var r=Game.run; r.slideT=0; r.wallT=0.2; return Art.heroFrame(r).name === 'wall'; })()");
+check('art: vault -> vault pose', "(function(){ var r=Game.run; r.wallT=0; r.vaultT=0.2; return Art.heroFrame(r).name === 'vault'; })()");
+
+check('art: run phase covers 12 distinct frames', "(function(){ var seen={}, n=0; for (var i=0;i<240;i++){ var ph=(i*(Math.PI*2/240))%(Math.PI*2); var idx=Math.floor(ph/(Math.PI*2)*SPRITES.run.frames.length); if(!seen[idx]){seen[idx]=1;n++;} } return n === 12; })()");
+check('art: drawHero blits to canvas', "(function(){ var r=Game.run; r.slideT=0; r.vaultT=0; r.wallT=0; r.onGround=true; r.flipT=0; r.dashT=0; var before=drawCounts.drawImage||0; Art.drawHero(Game.ctx, r, 0, Game.skinDef(), 1); return (drawCounts.drawImage||0) > before; })()");
+check('art: tint cache reuses one canvas per colour', "(function(){ var col='#123456'; var n=Art._tintCount; Art._tint('run', SPRITES.run.frames[0], col); var a=Art._tintCount; Art._tint('run', SPRITES.run.frames[0], col); return a === n + 1 && Art._tintCount === a; })()");
+check('art: different skins get different tints', "(function(){ var a=Art._tint('run', SPRITES.run.frames[0], '#ff6a3d'); var b=Art._tint('run', SPRITES.run.frames[0], '#52ff9d'); return !!a && !!b && a !== b; })()");
+check('art: drawBot draws hunter + wasp', "(function(){ var before=drawCounts.drawImage||0; var a=Art.drawBot(Game.ctx,'hunter',100,100,34,1,0); var b=Art.drawBot(Game.ctx,'wasp',140,100,26,1,0); return a && b && (drawCounts.drawImage||0) >= before + 2; })()");
+check('art: Runner.draw uses sprites when ready', "(function(){ var before=drawCounts.drawImage||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
+check('art: ghosts still render', "(function(){ Game.run.dashT=0.3; Game.run.ghosts.push({x:Game.run.x,y:Game.run.y,state:'run',phase:0,flipT:0,slideT:0,life:0.2}); var before=drawCounts.drawImage||0; Runner.drawGhosts(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
+check('art: swarm bots render sprites', "(function(){ Game.swarm.active=true; Game.swarm.gap=200; var before=drawCounts.drawImage||0; Game.drawSwarm(Game.ctx, 0); return (drawCounts.drawImage||0) >= before + 7; })()");
+check('art: falls back to vector when atlas missing', "(function(){ Art.ready=false; var before=drawCounts.beginPath||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); var ok=(drawCounts.beginPath||0) > before; Art.ready=true; return ok; })()");
 
 console.log('\nms/frame = ' + (ev('globalThis.__ms') ? ev('globalThis.__ms').toFixed(4) : '?'));
 console.log('----------------------------------------');

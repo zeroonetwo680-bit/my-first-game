@@ -270,8 +270,9 @@ const Runner = {
     }
   },
 
-  /* silhouette parkour pose */
+  /* silhouette parkour pose (vector fallback when the sprite atlas is not loaded) */
   draw(ctx, p, camX, skin, alpha) {
+    if (typeof Art !== 'undefined' && Art.ready && Art.drawHero(ctx, p, camX, skin, alpha)) return;
     const x = p.x - camX, y = p.y;
     const a = alpha === undefined ? 1 : alpha;
     const col = (skin && skin.col) || '#eaf6ff';

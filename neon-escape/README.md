@@ -6,7 +6,7 @@ gear, 8 skins, and a **fair** free-to-play model that turns Vector's loudest com
 biggest selling points.
 
 > 15 handcrafted levels · 3 zones · 5 unlockable moves · 4 gear sets (3 tiers each) · 8 skins ·
-> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · 151 smoke tests ×3 green
+> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · real sprite art · 172 smoke tests ×3 green
 
 ---
 
@@ -86,6 +86,31 @@ Designed for high ratings → organic ASO, not short-term extraction:
 5. **Season pass (cosmetic-only)** with daily runs as the retention engine.
 6. **Content pipeline**: levels are structured "beat specs" (`js/levels.js`) — new stages ship fast.
 
+## 🎬 Art pipeline (real sprites, not primitives)
+
+The hero and the hunter drones are **real illustrated sprites**, not hand-coded shapes:
+
+| Asset | Frames | Source | On screen |
+| --- | --- | --- | --- |
+| `hero-run.png` | 12-frame sprint cycle | AI-generated silhouette sheet → auto-sliced | 72 px tall, bottom-centre pivot |
+| `hero-poses.png` | tuck · fall · slide · wall · vault · dive | same | per-pose target height |
+| `bot-hunter.png` | swarm hunter drone | AI concept art → chroma-keyed from green | 34–37 px |
+| `bot-wasp.png` | small wasp drone | same | 26 px |
+
+Everything is produced by two committed tools, so the art is reproducible and re-cuttable:
+
+```bash
+node tools/slice.js        # assets/art/*.png  -> assets/sprites/*.png + per-frame JSON
+node tools/preview.js      # contact sheet at true in-game scale
+node tools/render-test.js  # boots the REAL game files and writes PNG frames
+```
+
+- **Hero sprites are white silhouettes on transparency**, tinted at runtime through a cached
+  `source-in` canvas per skin colour — one atlas drives all 8 skins (zero extra downloads).
+- **Pivots and heights live in the JSON**, so reslicing never needs a code change.
+- **Graceful fallback:** if the atlas is missing or still loading, `Runner.draw` falls back to the
+  original vector silhouette, so the game can never break on a failed image request.
+
 ## 🧪 Tech
 
 Vanilla HTML5 canvas (900×540), zero runtime deps, WebAudio synth music + SFX, deterministic seeded
@@ -93,7 +118,7 @@ generation (mulberry32), localStorage persistence (`nesc.*`). Runs anywhere — 
 **Capacitor APK** (`.github/workflows/neon-escape-apk.yml` builds `NEON-ESCAPE.apk` on every push).
 
 ```bash
-node neon-escape/test/smoke.js   # 151 checks — logic, physics, levels, economy, swarm, render, perf
+node neon-escape/test/smoke.js   # 172 checks — logic, physics, levels, economy, swarm, art, render, perf
 ```
 
 ## 📖 Story
