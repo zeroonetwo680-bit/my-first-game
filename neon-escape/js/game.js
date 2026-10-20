@@ -20,6 +20,7 @@ const Game = {
   best: { endless: 0, daily: 0 },
   storySeen: {}, revived: false, todayYmd: 0,
   finishing: false,
+  swarm: { active: false, gap: 0, max: 380, ramp: 0 }, lastDeath: 'trap', _buzzTick: -1,
 
   /* ---------------- persistence ---------------- */
   save() {
@@ -126,6 +127,7 @@ const Game = {
         if (!this.revived && this.run && this.run.dead) {
           this.revived = true;
           this.run.dead = false; this.run.iframes = 1.4; this.run.vy = 0; this.run.stumbleT = 0;
+          this.swarm.gap = Math.max(this.swarm.gap, 280);
           this.state = 'playing'; this.showScreen(null);
           AudioSys.play('shield');
         }
@@ -273,6 +275,9 @@ const Game = {
     this.runScore = 0; this.runCoins = 0; this.revived = false; this.finishing = false;
     Flow.reset();
     FX.clear();
+    this.lastDeath = 'trap';
+    this.swarm.active = !!def.chase || this.mode === 'endless' || this.mode === 'daily';
+    this.swarm.gap = 300; this.swarm.max = 380; this.swarm.ramp = 0; this._buzzTick = -1;
     this.camX = 0; this.zoom = 1;
     this.state = 'playing';
     this.showScreen(null);
@@ -326,7 +331,28 @@ const Game = {
     Flow.update(dt);
 
     if (world.done && !p.dead) return this.complete();
-    if (p.dead) return this.die();
+    if (p.dead) { this.lastDeath = 'trap'; return this.die(); }
+
+    // ---- SWARM CHASE (stumbles let it close in; clean play + dash pull away) ----
+    if (this.swarm.active) {
+      let delta = 16;
+      if (p.stumbleT > 0) delta = -215;
+      else if (p.dashT > 0) delta = 330;
+      else if (p.vaultT > 0) delta = 40;
+      if (p.precT > 0) delta += 55;
+      this.swarm.ramp = Math.min(9, p.dist / 9000);
+      delta -= this.swarm.ramp;
+      this.swarm.gap = clamp(this.swarm.gap + delta * dt, -20, this.swarm.max);
+      const bTick = Math.floor(this.t * 2.5);
+      if (this.swarm.gap < 150 && bTick !== this._buzzTick) { this._buzzTick = bTick; AudioSys.play('buzz'); }
+      if (this.swarm.gap <= 0) {
+        p.dead = true; this.lastDeath = 'swarm';
+        FX.spawn(p.x, p.y - 40, '#ff3b5c', 26, { speed: 340 });
+        FX.shake(10, 0.5); FX.addFlash(0.6, '#ff3b5c');
+        AudioSys.play('death');
+        return this.die();
+      }
+    }
 
     // camera
     const target = clamp(p.x - 280, 0, Math.max(0, this.level.width - this.W));
@@ -364,6 +390,7 @@ const Game = {
 
   die() {
     this.state = 'dead';
+    this.setText('ne-dead-title', this.lastDeath === 'swarm' ? 'SWARMED!' : 'CAUGHT!');
     this.setText('ne-dead-score', String(Math.floor(this.runScore)));
     this.setText('ne-dead-coins', '+' + this.run.coins + ' C');
     this.showScreen('ne-dead');
@@ -390,6 +417,7 @@ const Game = {
     if (this.level && this.run) {
       const cam = this.camX;
       this.drawLevel(ctx, cam);
+      this.drawSwarm(ctx, cam);
       Runner.drawGhosts(ctx, this.run, cam, this.skinDef());
       Runner.draw(ctx, this.run, cam, this.skinDef());
       FX.draw(ctx, cam);
@@ -541,6 +569,50 @@ const Game = {
     }
   },
 
+  drawSwarm(ctx, cam) {
+    if (!this.swarm.active || !this.run) return;
+    const sx = this.run.x - this.swarm.gap - cam;
+    const t = this.t;
+    const close = clamp((150 - this.swarm.gap) / 150, 0, 1);
+    // smoke trail
+    ctx.fillStyle = 'rgba(40,8,20,0.55)';
+    for (let i = 0; i < 5; i++) {
+      const off = Math.sin(t * 2 + i * 1.3) * 30;
+      ctx.beginPath();
+      ctx.arc(sx - 40 - i * 26, GROUND_Y - 70 + off + Math.sin(t * 3 + i) * 14, 34 + i * 6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // bots
+    for (let i = 0; i < 7; i++) {
+      const bx = sx - 20 + Math.sin(t * 2.4 + i * 1.7) * 26 - i * 5;
+      const by = GROUND_Y - 78 + Math.sin(t * 3.1 + i * 2.1) * 26;
+      const r = 7 + ((i * 37) % 5);
+      ctx.fillStyle = 'rgba(255,59,92,' + (0.16 + close * 0.22) + ')';
+      ctx.beginPath(); ctx.arc(bx, by, r * 2.2, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = i % 2 ? '#ff3b5c' : '#ff6a8a';
+      ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = '#ffd24d';
+      ctx.fillRect(bx - 2, by - 2, 4, 4);
+    }
+    // gap meter
+    const w = 260, x0 = this.W / 2 - w / 2, y0 = 18;
+    ctx.fillStyle = 'rgba(0,0,0,0.45)';
+    ctx.fillRect(x0, y0, w, 10);
+    const frac = clamp(this.swarm.gap / this.swarm.max, 0, 1);
+    ctx.fillStyle = frac > 0.5 ? '#52ff9d' : (frac > 0.25 ? '#ffd24d' : '#ff3b5c');
+    ctx.fillRect(x0, y0, w * frac, 10);
+    ctx.fillStyle = '#eaf6ff';
+    ctx.font = 'bold 11px Orbitron, monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText('SWARM', this.W / 2, y0 - 5);
+    ctx.textAlign = 'left';
+    // red vignette when close
+    if (close > 0) {
+      ctx.fillStyle = 'rgba(255,59,92,' + (close * 0.22 * (0.7 + 0.3 * Math.sin(t * 6))) + ')';
+      ctx.fillRect(0, 0, this.W, this.H);
+    }
+  },
+
   drawTrap(ctx, h, r, cam, t) {
     const x = h.x - cam;
     if (h.type === 'laser') {
@@ -618,7 +690,7 @@ const Game = {
 
 const ZONE_STORY = {
   1: 'THE COMPLEX — TEST WING\n\nYou wake up in a facility that measures everything you do.\nA voice on the broken intercom: "Run. I will open the doors."\nThey want a specimen. Give them a ghost.',
-  2: 'THE REACTOR — MAINTENANCE\n\nHeat, steam, and machines that do not sleep.\nThe voice again: "The core door is ahead. Do not stop."\nSomeone is helping you. Trust the run.',
+  2: 'THE REACTOR — MAINTENANCE\n\nHeat, steam, and machines that do not sleep.\nBehind you, the swarm wakes up — and it never slows down.\n"The core door is ahead. Do not stumble."\nTrust the run.',
   3: 'THE SURFACE — EXODUS\n\nNight air. Searchlights. The city beyond the fence.\n"They know you are leaving. GO."\nOne last sprint between you and freedom.',
   end: 'FREEDOM\n\nThe gates open. The city is yours.\nNo more tests. No more numbers.\nJust the wind — and the next run.\n\nTHANK YOU FOR PLAYING NEON ESCAPE'
 };

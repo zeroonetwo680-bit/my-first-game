@@ -111,12 +111,16 @@ const Runner = {
     p.dist += speed * dt;
     p.runPhase += dt * speed * 0.028;
 
-    // --- vertical ---
-    p.vy += G * dt;
-    if (p.wallT > 0 && !p.onGround && p.vy > (140 + (gear.gloves || 0) * 30)) {
-      p.vy = 140 + (gear.gloves || 0) * 30;
+    // --- vertical (zero gravity while grounded => no tunneling on big dt) ---
+    if (p.onGround && p.vy >= 0) {
+      p.vy = 0;
+    } else {
+      p.vy += G * dt;
+      if (p.wallT > 0 && !p.onGround && p.vy > (140 + (gear.gloves || 0) * 30)) {
+        p.vy = 140 + (gear.gloves || 0) * 30;
+      }
+      if (p.vy > 1500) p.vy = 1500;
     }
-    if (p.vy > 1500) p.vy = 1500;
     const prevFeet = p.y, prevHead = p.y - (p.slideT > 0 ? 36 : 72);
     p.y += p.vy * dt;
 
@@ -159,6 +163,17 @@ const Runner = {
             FX.spawn(p.x + 12, p.y - 40, '#ff6a3d', 8, { speed: 160 });
             AudioSys.play('stumble');
           }
+        }
+      }
+    }
+    // ground probe: snap to surface when feet sit exactly on a top edge
+    if (!p.onGround && p.vy >= 0) {
+      const bb = this.box(p);
+      for (let i = 0; i < solids.length; i++) {
+        const s = solids[i];
+        if (bb.x < s.x + s.w && bb.x + bb.w > s.x && p.y >= s.y - 0.51 && p.y <= s.y + 3) {
+          p.y = s.y; p.vy = 0; p.onGround = true; p.jumpsUsed = 0;
+          break;
         }
       }
     }

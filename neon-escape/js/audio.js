@@ -79,6 +79,7 @@ const AudioSys = {
         break;
       }
       case 'laser': this._tone(1400, 0.05, 'sine', 0.05, 900); break;
+      case 'buzz': this._tone(120, 0.18, 'sawtooth', 0.07, 90); this._tone(240, 0.12, 'square', 0.04, 200); break;
     }
   },
 

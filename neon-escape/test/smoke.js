@@ -272,6 +272,25 @@ check('showScreen toggles', "(function(){ Game.showScreen('ne-pause'); var a = !
 check('zone stories non-empty', "ZONE_STORY[1].length > 40 && ZONE_STORY[2].length > 40 && ZONE_STORY[3].length > 40 && ZONE_STORY.end.indexOf('FREEDOM') >= 0");
 check('menu hint present', "document.getElementById('ne-menu') !== null");
 
+/* ---- SWARM CHASE ---- */
+check('chase flags: 8 levels (rea3..sky5)', "(function(){ return Levels.LIST.filter(d => d.chase).length === 8 && Levels.LIST[7].chase === true && Levels.LIST[14].chase === true && Levels.LIST[0].chase === undefined && Levels.LIST[5].chase === undefined; })()");
+check('swarm inactive in zone 1', "(function(){ Game.act('mode:campaign'); Game.storySeen = {z1: true, z2: true, z3: true}; Game.act('level:lab1'); return Game.swarm.active === false; })()");
+check('swarm active in rea3 (reactor)', "(function(){ Game.act('level:rea3'); return Game.swarm.active === true && Game.swarm.gap === 300; })()");
+check('swarm active in sky4', "(function(){ Game.act('level:sky4'); return Game.swarm.active === true; })()");
+check('swarm active in endless + daily', "(function(){ Game.act('mode:endless'); var a = Game.swarm.active === true; Game.act('mode:daily'); return a && Game.swarm.active === true; })()");
+check('swarm inactive in training', "(function(){ Game.act('mode:training'); return Game.swarm.active === false; })()");
+check('clean run recovers gap', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); var g0 = Game.swarm.gap; for (var i = 0; i < 60; i++) Game.update(0.016); return Game.swarm.gap > g0; })()");
+check('stumble shrinks gap', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); var g0 = Game.swarm.gap; Game.run.stumbleT = 0.5; for (var i = 0; i < 30; i++) Game.update(0.016); return Game.swarm.gap < g0; })()");
+check('dash pulls away from swarm', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); var g0 = Game.swarm.gap; Game.run.dashT = 0.3; Game.update(0.1); return Game.swarm.gap > g0 + 15; })()");
+check('precision landing buys space', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.run.precT = 0.5; var g0 = Game.swarm.gap; for (var i = 0; i < 20; i++) Game.update(0.016); return Game.swarm.gap > g0; })()");
+check('swarm catch kills (SWARMED!)', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.swarm.gap = 5; Game.run.stumbleT = 0.5; Game.update(0.2); return Game.run.dead === true && Game.state === 'dead' && Game.lastDeath === 'swarm' && document.getElementById('ne-dead-title').textContent === 'SWARMED!'; })()");
+check('trap death says CAUGHT!', "(function(){ Game.startLevel({id: 'sw2', name: 'sw2', zone: 1, len: 200}); Game.run.dead = true; Game.die(); return document.getElementById('ne-dead-title').textContent === 'CAUGHT!'; })()");
+check('revive restores safe gap', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.swarm.gap = 5; Game.run.stumbleT = 0.5; Game.update(0.2); Game.act('revive'); return Game.state === 'playing' && Game.swarm.gap >= 280; })()");
+check('swarm ramp grows with distance', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.run.dist = 30000; Game.update(0.016); return Game.swarm.ramp > 2; })()");
+check('gap clamped to max', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.swarm.gap = 375; Game.run.dashT = 0.3; Game.update(0.2); return Game.swarm.gap <= Game.swarm.max; })()");
+check('drawSwarm no crash (active+off)', "(function(){ Game.startLevel({id: 'sw', name: 'sw', zone: 1, len: 200, chase: true}); Game.drawSwarm(Game.ctx, 0); Game.swarm.active = false; Game.drawSwarm(Game.ctx, 0); return true; })()");
+check('swarm story mentions the swarm', "ZONE_STORY[2].indexOf('swarm') >= 0");
+
 /* ---- 60s stress ---- */
 check('logic+render under 1.5ms/frame', "(function(){ Game.act('mode:endless'); var t0 = Date.now(); for (var i = 0; i < 2400; i++) { Game.update(0.016); if (Game.state !== 'playing') { Game.act('mode:endless'); } Game.render(); } var ms = (Date.now() - t0) / 2400; globalThis.__ms = ms; return ms < 1.5; })()");
 

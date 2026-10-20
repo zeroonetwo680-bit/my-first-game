@@ -6,7 +6,7 @@ gear, 8 skins, and a **fair** free-to-play model that turns Vector's loudest com
 biggest selling points.
 
 > 15 handcrafted levels · 3 zones · 5 unlockable moves · 4 gear sets (3 tiers each) · 8 skins ·
-> Endless + Daily runs · Training Room · complete story with a real ending · 134 smoke tests ×3 green
+> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · 151 smoke tests ×3 green
 
 ---
 
@@ -21,16 +21,28 @@ Real 2024–2026 player complaints (App Store / Play Store / Reddit) mapped to o
 | Story is "unfinished / to be continued" (Vector 2 abandoned) | **Complete story arc with a real ending** (3 zone cards + finale) |
 | "No practice makes perfect" | **Training Room** — free, all traps, no pressure |
 | Energy/wait timers | **None.** Play as much as you want |
+| Swarm bots = cheap, unfair deaths | **Visible SWARM meter** — stumbles let it close in, clean play & dashes pull away. Skill, not luck. |
 | Gear charges that break / run out | **Permanent gear** — upgrade once, keep forever |
 | "No stats / no clothing" | **8 skins** with rarities + trails, plus full run stats |
 | Forced ads every attempt | **Zero forced ads.** Revive is free once per run. |
 
+## 🐝 SWARM CHASE
+
+The Complex's hunter swarm wakes up in the Reactor and never stops:
+
+- Active in the **last 3 REACTOR stages + all 5 ROOFTOP stages** + every Endless/Daily run.
+- A **visible SWARM meter** shows the exact distance — no hidden timers, no surprises.
+- **Stumbles** (clipping crates, beams, walls) let the swarm surge forward.
+- **Clean running** slowly recovers the gap; **dashes** and **Precision Landings** burst it open.
+- Getting caught ends the run — one free **Revive** restores a safe distance.
+- The swarm pressure ramps up over distance in Endless (never past fair).
+
 ## 🕹️ Modes
 
 - **CAMPAIGN** — 3 zones × 5 stages (LAB → REACTOR → ROOFTOP), story cards, ending.
-- **ENDLESS** — seeded procedural run (same seed on retry = learn & master).
-- **DAILY RUN** — one shared seed per date, everyone plays the same track.
-- **TRAINING** — playground with every trap type.
+- **ENDLESS** — seeded procedural run (same seed on retry = learn & master) + swarm chase.
+- **DAILY RUN** — one shared seed per date, everyone plays the same track + swarm chase.
+- **TRAINING** — playground with every trap type, no swarm.
 
 ## 🥋 Moves (unlock with coins — no real money)
 
@@ -81,7 +93,7 @@ generation (mulberry32), localStorage persistence (`nesc.*`). Runs anywhere — 
 **Capacitor APK** (`.github/workflows/neon-escape-apk.yml` builds `NEON-ESCAPE.apk` on every push).
 
 ```bash
-node neon-escape/test/smoke.js   # 134 checks — logic, physics, levels, economy, render, perf
+node neon-escape/test/smoke.js   # 151 checks — logic, physics, levels, economy, swarm, render, perf
 ```
 
 ## 📖 Story

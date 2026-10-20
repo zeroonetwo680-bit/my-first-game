@@ -161,7 +161,7 @@ const Levels = {
       floorCoins: [[8, 10], [40, 42], [66, 68], [108, 112]]
     },
     {
-      id: 'rea3', name: 'Blade Run', zone: 2, len: 112,
+      id: 'rea3', name: 'Blade Run', zone: 2, len: 112, chase: true,
       gaps: [[42, 44], [68, 70]],
       saws: [14, 26, 38, 52, 64, 78, 90],
       drones: [{ c: 20, row: 4 }, { c: 46, row: 4 }, { c: 72, row: 4 }, { c: 98, row: 4 }],
@@ -170,7 +170,7 @@ const Levels = {
       floorCoins: [[16, 18], [30, 31], [56, 57], [92, 96]]
     },
     {
-      id: 'rea4', name: 'Overheat', zone: 2, len: 116,
+      id: 'rea4', name: 'Overheat', zone: 2, len: 116, chase: true,
       gaps: [[28, 30], [56, 58], [84, 86]],
       lasers: [{ c: 16, row: 3 }, { c: 34, row: 4 }, { c: 52, row: 3 }, { c: 70, row: 4 }, { c: 88, row: 3 }, { c: 104, row: 4 }],
       vents: [24, 44, 62, 80, 100], crates: [12, 40, 68, 96],
@@ -179,7 +179,7 @@ const Levels = {
       floorCoins: [[8, 10], [36, 38], [72, 74], [108, 112]]
     },
     {
-      id: 'rea5', name: 'Core Door', zone: 2, len: 120,
+      id: 'rea5', name: 'Core Door', zone: 2, len: 120, chase: true,
       gaps: [[34, 36], [62, 64], [90, 92]],
       pistons: [{ c: 14, row: 2 }, { c: 30, row: 2 }, { c: 58, row: 2 }, { c: 86, row: 2 }],
       saws: [22, 46, 74, 100],
@@ -192,7 +192,7 @@ const Levels = {
 
     /* ZONE 3 — ROOFTOP EXODUS */
     {
-      id: 'sky1', name: 'Surface', zone: 3, len: 116,
+      id: 'sky1', name: 'Surface', zone: 3, len: 116, chase: true,
       gaps: [[24, 27], [52, 55], [80, 83]],
       drones: [{ c: 16, row: 4 }, { c: 32, row: 4 }, { c: 48, row: 4 }, { c: 64, row: 4 }, { c: 80, row: 4 }, { c: 96, row: 4 }],
       crates: [12, 40, 68, 96], beams: [[20, 22], [48, 50], [76, 78]],
@@ -200,7 +200,7 @@ const Levels = {
       floorCoins: [[8, 10], [36, 38], [60, 62], [100, 104]]
     },
     {
-      id: 'sky2', name: 'Wind Line', zone: 3, len: 112,
+      id: 'sky2', name: 'Wind Line', zone: 3, len: 112, chase: true,
       gaps: [[34, 36], [62, 64], [90, 92]],
       vents: [14, 28, 42, 56, 70, 84, 98],
       beams: [[20, 22], [48, 50], [76, 78]], crates: [10, 38, 66, 94],
@@ -208,7 +208,7 @@ const Levels = {
       floorCoins: [[8, 9], [24, 26], [52, 54], [100, 104]]
     },
     {
-      id: 'sky3', name: 'Searchlights', zone: 3, len: 120,
+      id: 'sky3', name: 'Searchlights', zone: 3, len: 120, chase: true,
       gaps: [[32, 34], [66, 68], [98, 100]],
       lasers: [{ c: 12, row: 3 }, { c: 26, row: 3 }, { c: 44, row: 4 }, { c: 58, row: 3 }, { c: 76, row: 4 }, { c: 90, row: 3 }, { c: 104, row: 4 }],
       mines: [20, 50, 82, 110], crates: [16, 46, 78],
@@ -217,7 +217,7 @@ const Levels = {
       floorCoins: [[8, 10], [40, 42], [72, 74], [112, 116]]
     },
     {
-      id: 'sky4', name: 'The Chase', zone: 3, len: 116,
+      id: 'sky4', name: 'The Chase', zone: 3, len: 116, chase: true,
       gaps: [[26, 28], [56, 58], [86, 88]],
       drones: [{ c: 12, row: 4 }, { c: 22, row: 5 }, { c: 32, row: 4 }, { c: 42, row: 5 }, { c: 52, row: 4 }, { c: 62, row: 5 }, { c: 72, row: 4 }, { c: 82, row: 5 }, { c: 92, row: 4 }],
       crates: [18, 48, 78, 104],
@@ -225,7 +225,7 @@ const Levels = {
       floorCoins: [[8, 10], [34, 36], [64, 66], [96, 98], [108, 112]]
     },
     {
-      id: 'sky5', name: 'Freedom', zone: 3, len: 124,
+      id: 'sky5', name: 'Freedom', zone: 3, len: 124, chase: true,
       gaps: [[28, 30], [54, 56], [82, 84], [104, 106]],
       pistons: [{ c: 14, row: 2 }, { c: 40, row: 2 }, { c: 66, row: 2 }, { c: 92, row: 2 }],
       lasers: [{ c: 24, row: 3 }, { c: 52, row: 3 }, { c: 80, row: 3 }, { c: 108, row: 3 }],
