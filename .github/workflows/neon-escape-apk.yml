@@ -1,0 +1,71 @@
+name: Neon Escape APK
+
+on:
+  workflow_dispatch: {}
+  push:
+    branches:
+      - 'arena/**'
+    paths:
+      - 'neon-escape/**'
+      - '.github/workflows/neon-escape-apk.yml'
+      - 'scripts/prepare-neonescape.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Assemble self-contained web bundle
+        run: bash scripts/prepare-neonescape.sh
+
+      - name: Install Capacitor
+        run: npm install --no-fund --no-audit @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+
+      - name: Init Capacitor project
+        run: npx --yes cap init "NEON ESCAPE" "com.neonwreckage.neonescape" --web-dir www
+
+      - name: Add Android platform
+        run: npx --yes cap add android
+
+      - name: Sync web assets
+        run: npx --yes cap sync android
+
+      - name: Build debug APK
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-escape-apk
+          path: android/app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
+
+      - name: Publish to GitHub Releases
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          cp "$APK" NEON-ESCAPE.apk
+          gh release delete neonescape-android-latest --yes --cleanup || true
+          git tag -f neonescape-android-latest "$GITHUB_SHA"
+          git push -f origin "refs/tags/neonescape-android-latest"
+          gh release create neonescape-android-latest \
+            --title "NEON ESCAPE — Android APK" \
+            --notes "Installable debug APK of NEON ESCAPE. The whole game is bundled — works fully offline. Enable 'install unknown apps' for your browser/file manager, then install. Play Protect may warn about debug signatures; choose 'Install anyway'." \
+            NEON-ESCAPE.apk

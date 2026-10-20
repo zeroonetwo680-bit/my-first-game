@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>NEON ESCAPE — Facility Parkour Runner</title>
+<meta name="description" content="Escape the Complex: a neon parkour runner with 15 handcrafted levels, moves, gear, skins, endless and daily runs. Skill-first, fair, no paywalls.">
+<meta name="theme-color" content="#05060f">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+<div id="ne-wrap">
+  <canvas id="ne-canvas" width="900" height="540"></canvas>
+
+  <div id="ne-hud" class="hidden">
+    <span id="ne-level-name" class="hud-left"></span>
+    <span class="hud-right">
+      <b id="ne-shield" class="shield"></b>
+      <b id="ne-flow" class="flow">x1</b>
+      <b id="ne-coins" class="coins">0</b>
+      <b id="ne-score" class="score">0</b>
+    </span>
+  </div>
+
+  <!-- MAIN MENU -->
+  <div id="ne-menu" class="screen">
+    <h1>NEON<span>ESCAPE</span></h1>
+    <p class="tag">Break out of the Complex — skill beats luck</p>
+    <div class="btns">
+      <button class="big" data-act="mode:campaign">CAMPAIGN</button>
+      <button data-act="mode:endless">ENDLESS</button>
+      <button data-act="mode:daily">DAILY RUN</button>
+      <button data-act="mode:training">TRAINING</button>
+      <button data-act="open:shop">MOVES</button>
+      <button data-act="open:gear">GEAR</button>
+      <button data-act="open:skins">SKINS</button>
+      <button data-act="mute">SOUND</button>
+    </div>
+    <div class="foot"><span id="ne-wallet">0 C</span>
+      <span class="hint">SWIPE ▲▼▶ or W / S / D — jump, slide, dash · double-tap ◀▶ = dash</span>
+    </div>
+  </div>
+
+  <!-- CAMPAIGN LEVELS -->
+  <div id="ne-levels" class="screen hidden">
+    <h2>CAMPAIGN</h2>
+    <div id="ne-levels-body" class="panel"></div>
+    <button data-act="menu">BACK</button>
+  </div>
+
+  <!-- MOVES SHOP -->
+  <div id="ne-shop" class="screen hidden">
+    <h2>MOVES</h2>
+    <p class="tag">Coins only — no paywalls, no luck</p>
+    <div id="ne-shop-body" class="panel"></div>
+    <button data-act="menu">BACK</button>
+  </div>
+
+  <!-- GEAR -->
+  <div id="ne-gear" class="screen hidden">
+    <h2>GEAR</h2>
+    <p class="tag">Permanent upgrades — never breaks, never expires</p>
+    <div id="ne-gear-body" class="panel"></div>
+    <button data-act="menu">BACK</button>
+  </div>
+
+  <!-- SKINS -->
+  <div id="ne-skins" class="screen hidden">
+    <h2>SKINS</h2>
+    <p class="tag">Style your silhouette</p>
+    <div id="ne-skins-body" class="panel"></div>
+    <button data-act="menu">BACK</button>
+  </div>
+
+  <!-- STORY -->
+  <div id="ne-story" class="screen hidden">
+    <p id="ne-story-text" class="story"></p>
+    <button class="big" data-act="story">CONTINUE</button>
+  </div>
+
+  <!-- PAUSE -->
+  <div id="ne-pause" class="screen hidden">
+    <h2>PAUSED</h2>
+    <div class="btns">
+      <button class="big" data-act="resume">RESUME</button>
+      <button data-act="retry">RESTART</button>
+      <button data-act="menu">MENU</button>
+    </div>
+  </div>
+
+  <!-- DEAD / RUN OVER -->
+  <div id="ne-dead" class="screen hidden">
+    <h2 class="bad">CAUGHT!</h2>
+    <p class="tag">SCORE <b id="ne-dead-score">0</b> · <span id="ne-dead-coins">+0 C</span></p>
+    <div class="btns">
+      <button class="big" data-act="revive">REVIVE (FREE · once)</button>
+      <button data-act="retry">RETRY</button>
+      <button data-act="menu">MENU</button>
+    </div>
+  </div>
+
+  <!-- LEVEL COMPLETE -->
+  <div id="ne-complete" class="screen hidden">
+    <h2 class="good">LEVEL COMPLETE</h2>
+    <p class="tag">SCORE <b id="ne-complete-score">0</b> · <span id="ne-complete-coins">+0 C</span></p>
+    <div class="btns">
+      <button class="big" data-act="next">NEXT</button>
+      <button data-act="menu">MENU</button>
+    </div>
+  </div>
+
+  <!-- ENDING -->
+  <div id="ne-ending" class="screen hidden">
+    <p id="ne-ending-text" class="story"></p>
+    <button class="big" data-act="menu">MENU</button>
+  </div>
+</div>
+
+<script src="js/core.js"></script>
+<script src="js/audio.js"></script>
+<script src="js/fx.js"></script>
+<script src="js/runner.js"></script>
+<script src="js/levels.js"></script>
+<script src="js/game.js"></script>
+<script>
+  Game.boot(document.getElementById('ne-canvas'));
+</script>
+</body>
+</html>
