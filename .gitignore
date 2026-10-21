@@ -4,3 +4,7 @@ android/
 node_modules/
 capacitor.config.*
 *.apk
+
+# dev-only tooling for neon-escape/tools (regenerate with: cd neon-escape && npm i @napi-rs/canvas)
+neon-escape/package.json
+neon-escape/package-lock.json
