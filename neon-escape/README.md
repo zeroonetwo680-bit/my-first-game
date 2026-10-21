@@ -6,7 +6,7 @@ gear, 8 skins, and a **fair** free-to-play model that turns Vector's loudest com
 biggest selling points.
 
 > 15 handcrafted levels · 3 zones · 5 unlockable moves · 4 gear sets (3 tiers each) · 8 skins ·
-> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · real sprite art · 177 smoke tests ×3 green
+> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · real sprite art · 192 smoke tests ×3 green
 
 ---
 
@@ -86,7 +86,39 @@ Designed for high ratings → organic ASO, not short-term extraction:
 5. **Season pass (cosmetic-only)** with daily runs as the retention engine.
 6. **Content pipeline**: levels are structured "beat specs" (`js/levels.js`) — new stages ship fast.
 
-## 🎬 Art pipeline (real sprites, not primitives)
+## 🦴 Hero animation: skeletal rig (Vector-style)
+
+The runner is **not** a sprite flipbook any more. `js/rig.js` evaluates a
+skeleton every frame (60 fps) with two-bone IK on both legs:
+
+| Why a rig | Sprite sheet | Rig |
+| --- | --- | --- |
+| Frame rate | 12 poses ≈ 20 fps, reads steppy | continuous, evaluates every frame |
+| Foot contact | contact foot slides with the body | stance foot **locked to the ground** |
+| States | needs art per state | run/dash/jump/fall/slide/wall/vault from one skeleton |
+| Reacts to speed | fixed | lean, stride and cadence scale with speed |
+
+**Foot-planting math.** The body advances `v` px/s and `runPhase` advances at
+`v·K`, so the stride period is `T = 2π/(v·K)` — independent of speed. During
+stance a planted foot travels `2·stride` backwards in body space while the body
+advances `v·duty·T = duty·2π/K`. Matching them gives
+
+```
+K = duty · π / stride
+```
+
+which is why `Rig.gaitK()` is derived from the pose constants instead of being
+hand-tuned, and why `Runner.step` advances `runPhase` by `speed · Rig.gaitK()`.
+Test `rig: stance foot is locked to the ground` measures the residual slip and
+fails above 0.35 px per step.
+
+Rendering is a tapered torso polygon, IK legs with a solved knee that always
+bulges forward, counter-swinging arms with a fixed elbow bend, swept hair and a
+rim glow; the far-side limbs are drawn first in a darker shade of the skin colour
+for depth. It shares the sprite pivot (feet) and the skin palette, so all eight
+skins work unchanged.
+
+## 🎬 Art pipeline (sprites + external animations)
 
 The hero and the hunter drones are **real illustrated sprites**, not hand-coded shapes:
 
@@ -142,7 +174,7 @@ generation (mulberry32), localStorage persistence (`nesc.*`). Runs anywhere — 
 **Capacitor APK** (`.github/workflows/neon-escape-apk.yml` builds `NEON-ESCAPE.apk` on every push).
 
 ```bash
-node neon-escape/test/smoke.js   # 177 checks — logic, physics, levels, economy, swarm, art, render, perf
+node neon-escape/test/smoke.js   # 192 checks — logic, physics, levels, economy, swarm, rig, art, render, perf
 ```
 
 ## 📖 Story

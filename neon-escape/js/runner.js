@@ -109,7 +109,9 @@ const Runner = {
     if (p.vaultT > 0) speed *= 1.15;
     p.x += speed * dt;
     p.dist += speed * dt;
-    p.runPhase += dt * speed * 0.028;
+    p.speedNow = speed;
+    // gait rate derived from the rig constants => the stance foot never slides
+    p.runPhase += dt * speed * (typeof Rig !== 'undefined' ? Rig.gaitK() : 0.08);
 
     // --- vertical (zero gravity while grounded => no tunneling on big dt) ---
     if (p.onGround && p.vy >= 0) {
@@ -270,8 +272,10 @@ const Runner = {
     }
   },
 
-  /* silhouette parkour pose (vector fallback when the sprite atlas is not loaded) */
+  /* skeletal silhouette (Vector-style). Falls back to the sprite atlas, then
+     to the original hand-coded vector poses, so a missing file never breaks. */
   draw(ctx, p, camX, skin, alpha) {
+    if (typeof Rig !== 'undefined' && Rig.draw(ctx, p, camX, skin, alpha)) return;
     if (typeof Art !== 'undefined' && Art.ready && Art.drawHero(ctx, p, camX, skin, alpha)) return;
     const x = p.x - camX, y = p.y;
     const a = alpha === undefined ? 1 : alpha;

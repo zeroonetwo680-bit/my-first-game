@@ -99,7 +99,7 @@ sandbox.cancelAnimationFrame = () => {};
 sandbox.setTimeout = setTimeout; sandbox.clearTimeout = clearInterval; sandbox.setInterval = () => 0; sandbox.clearInterval = () => {};
 
 // load game files
-['js/core.js', 'js/audio.js', 'js/fx.js', 'js/art.js', 'js/runner.js', 'js/levels.js', 'js/game.js'].forEach((f) => {
+['js/core.js', 'js/audio.js', 'js/fx.js', 'js/art.js', 'js/rig.js', 'js/runner.js', 'js/levels.js', 'js/game.js'].forEach((f) => {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', f), 'utf8'), sandbox, { filename: f });
 });
 
@@ -328,8 +328,8 @@ check('art: drawHero blits to canvas', "(function(){ var r=Game.run; r.slideT=0;
 check('art: tint cache reuses one canvas per colour', "(function(){ var col='#123456'; var n=Art._tintCount; Art._tint('run', SPRITES.run.frames[0], col); var a=Art._tintCount; Art._tint('run', SPRITES.run.frames[0], col); return a === n + 1 && Art._tintCount === a; })()");
 check('art: different skins get different tints', "(function(){ var a=Art._tint('run', SPRITES.run.frames[0], '#ff6a3d'); var b=Art._tint('run', SPRITES.run.frames[0], '#52ff9d'); return !!a && !!b && a !== b; })()");
 check('art: drawBot draws hunter + wasp', "(function(){ var before=drawCounts.drawImage||0; var a=Art.drawBot(Game.ctx,'hunter',100,100,34,1,0); var b=Art.drawBot(Game.ctx,'wasp',140,100,26,1,0); return a && b && (drawCounts.drawImage||0) >= before + 2; })()");
-check('art: Runner.draw uses sprites when ready', "(function(){ var before=drawCounts.drawImage||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
-check('art: ghosts still render', "(function(){ Game.run.dashT=0.3; Game.run.ghosts.push({x:Game.run.x,y:Game.run.y,state:'run',phase:0,flipT:0,slideT:0,life:0.2}); var before=drawCounts.drawImage||0; Runner.drawGhosts(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
+check('art: Runner.draw paints stroke geometry', "(function(){ var before=(drawCounts.stroke||0)+(drawCounts.drawImage||0); Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); return ((drawCounts.stroke||0)+(drawCounts.drawImage||0)) > before; })()");
+check('art: ghosts still render', "(function(){ Game.run.dashT=0.3; Game.run.ghosts.push({x:Game.run.x,y:Game.run.y,state:'run',phase:0,flipT:0,slideT:0,life:0.2}); var before=(drawCounts.stroke||0)+(drawCounts.drawImage||0); Runner.drawGhosts(Game.ctx, Game.run, 0, Game.skinDef()); return ((drawCounts.stroke||0)+(drawCounts.drawImage||0)) > before; })()");
 check('art: swarm bots render sprites', "(function(){ Game.swarm.active=true; Game.swarm.gap=200; var before=drawCounts.drawImage||0; Game.drawSwarm(Game.ctx, 0); return (drawCounts.drawImage||0) >= before + 7; })()");
 check('art: generic loader loads every atlas', "Object.keys(Art.img).length >= 4 && !!Art.img.run && !!Art.img.poses && !!Art.img.botHunter && !!Art.img.botWasp");
 check('art: has() is true only for frame sequences', "Art.has('run') === true && Art.has('poses') === false && Art.has('botHunter') === false && Art.frameCount('run') === 12");
@@ -337,6 +337,30 @@ check('art: drawAnim clamps + wraps frame index', "(function(){ var before=drawC
 check('art: drawAnim refuses unknown animations', "Art.drawAnim(Game.ctx,'nope',0,0,0,10,null,1) === false && Art.frameCount('nope') === 0 && Art.has('nope') === false");
 check('art: EXTRA-ANIM block is empty by default', "Object.keys(SPRITES).filter(function(k){return typeof SPRITES[k]==='object' && typeof SPRITES[k].file==='string';}).length === 4");
 check('art: falls back to vector when atlas missing', "(function(){ Art.ready=false; var before=drawCounts.beginPath||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); var ok=(drawCounts.beginPath||0) > before; Art.ready=true; return ok; })()");
+
+/* ---------------- skeletal rig ---------------- */
+check('rig: enabled + reports a standing height', "Rig.enabled === true && Rig.height() >= 64 && Rig.height() <= 76");
+check('rig: gait rate derives from the pose constants', "(function(){ var k = Rig.gaitK(); return Math.abs(k - Rig.P.duty * Math.PI / Rig.P.stride) < 1e-9; })()");
+check('rig: Runner.draw prefers the rig', "(function(){ var before=drawCounts.stroke||0; Rig.enabled=true; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.stroke||0) > before; })()");
+
+// a full stride must contain distinct poses (this is what the sprite sheet failed at)
+check('rig: run cycle has 12 distinct poses', "(function(){ var sigs=[], seen={}, distinct=0; for (var i=0;i<12;i++){ var q=Rig.pose({state:'run', onGround:true, runPhase:i/12*Math.PI*2, baseSpeed:310, speedNow:310}); var sig=[q.hip.y,q.shoulder.x,q.legs[0].ankle.x,q.legs[1].ankle.x,q.legs[0].knee.x,q.arms[0].hand.x].map(function(v){return v.toFixed(2);}).join(','); if(!seen[sig]){seen[sig]=1;distinct++;} } return distinct === 12; })()");
+check('rig: opposite legs stay half a cycle apart', "(function(){ for (var i=0;i<12;i++){ var q=Rig.pose({state:'run', onGround:true, runPhase:i/12*Math.PI*2, baseSpeed:310, speedNow:310}); var a=q.legs[0].ankle.x, b=q.legs[1].ankle.x; if (Math.abs(a-b) < 2) return false; } return true; })()");
+
+// foot planting: the contact foot must move backwards at exactly the body speed
+check('rig: stance foot is locked to the ground', "(function(){ var spd=310, dt=1/600; var slip=0, n=0; for (var i=0;i<40;i++){ var ph=i*0.02; var q0=Rig.pose({state:'run',onGround:true,runPhase:ph,baseSpeed:spd,speedNow:spd}); var q1=Rig.pose({state:'run',onGround:true,runPhase:ph+spd*Rig.gaitK()*dt,baseSpeed:spd,speedNow:spd}); var a=q0.legs[0].ankle, b=q1.legs[0].ankle; if (a.y > -0.5 && b.y > -0.5) { var worldMove = (b.x - a.x) + spd*dt; slip += Math.abs(worldMove); n++; } } return n > 5 && slip/n < 0.35; })()",
+);
+check('rig: knees always bend forward', "(function(){ for (var i=0;i<12;i++){ var q=Rig.pose({state:'run',onGround:true,runPhase:i/12*Math.PI*2,baseSpeed:310,speedNow:310}); for (var j=0;j<2;j++){ var knee=q.legs[j].knee, hip=q.hip, ankle=q.legs[j].ankle; if (knee.x < Math.min(hip.x, ankle.x) - 0.5) return false; } } return true; })()");
+check('rig: legs never over-extend past their length', "(function(){ for (var i=0;i<24;i++){ var q=Rig.pose({state:'run',onGround:true,runPhase:i/24*Math.PI*2,baseSpeed:310,speedNow:310}); for (var j=0;j<2;j++){ var l=q.legs[j]; var dx=l.knee.x-l.hip.x, dy=l.knee.y-l.hip.y, ex=l.ankle.x-l.knee.x, ey=l.ankle.y-l.knee.y; if (Math.sqrt(dx*dx+dy*dy) > Rig.P.thigh+0.01) return false; if (Math.sqrt(ex*ex+ey*ey) > Rig.P.shin+0.01) return false; } } return true; })()");
+check('rig: hands hang below the shoulder (not over the head)', "(function(){ for (var i=0;i<12;i++){ var q=Rig.pose({state:'run',onGround:true,runPhase:i/12*Math.PI*2,baseSpeed:310,speedNow:310}); for (var j=0;j<2;j++){ if (q.arms[j].hand.y < q.shoulder.y - 6) return false; } } return true; })()");
+
+// every movement state produces a pose
+check('rig: all states pose without gaps', "['run','dash','jump','fall','slide','wall','vault','dead'].every(function(st){ var q=Rig.pose({state:st,onGround:st==='run'||st==='slide'||st==='dash',vy:st==='fall'?300:-200,runPhase:1.1,baseSpeed:310,speedNow:310,dashT:st==='dash'?0.2:0,slideT:st==='slide'?0.3:0,wallT:st==='wall'?0.3:0}); return q && q.legs.length===2 && q.arms.length===2 && isFinite(q.head.x) && isFinite(q.hip.y); })");
+check('rig: airborne feet are tucked above the standing foot line', "(function(){ var g=Rig.pose({state:'run',onGround:true,runPhase:1.1,baseSpeed:310,speedNow:310}); var a=Rig.pose({state:'jump',onGround:false,vy:-500,runPhase:1.1,baseSpeed:310,speedNow:310}); var grounded=Math.min(g.legs[0].ankle.y, g.legs[1].ankle.y); var lifted=Math.min(a.legs[0].ankle.y, a.legs[1].ankle.y); return lifted < grounded - 2; })()");
+check('rig: dash leans further than a normal run', "(function(){ var r=Rig.pose({state:'run',onGround:true,runPhase:1,baseSpeed:310,speedNow:310}); var d=Rig.pose({state:'dash',onGround:true,runPhase:1,baseSpeed:310,speedNow:310}); return d.lean > r.lean; })()");
+check('rig: faster speed increases the lean', "(function(){ var slow=Rig.pose({state:'run',onGround:true,runPhase:1,baseSpeed:310,speedNow:310}); var fast=Rig.pose({state:'run',onGround:true,runPhase:1,baseSpeed:310,speedNow:700}); return fast.lean > slow.lean; })()");
+check('rig: skin colour drives the silhouette', "(function(){ var before=drawCounts.stroke||0; Rig.draw(Game.ctx,{x:0,y:0,onGround:true,runPhase:0.5,state:'run',baseSpeed:310,speedNow:310},0,{col:'#ff6a3d'},1); return (drawCounts.stroke||0) >= before + 6; })()");
+check('rig: can be disabled for the fallback path', "(function(){ Rig.enabled=false; var a=Rig.draw(Game.ctx, Game.run, 0, Game.skinDef(), 1); Rig.enabled=true; return a === false; })()");
 
 console.log('\nms/frame = ' + (ev('globalThis.__ms') ? ev('globalThis.__ms').toFixed(4) : '?'));
 console.log('----------------------------------------');
