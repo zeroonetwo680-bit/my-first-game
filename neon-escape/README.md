@@ -6,7 +6,7 @@ gear, 8 skins, and a **fair** free-to-play model that turns Vector's loudest com
 biggest selling points.
 
 > 15 handcrafted levels · 3 zones · 5 unlockable moves · 4 gear sets (3 tiers each) · 8 skins ·
-> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · real sprite art · 172 smoke tests ×3 green
+> **Swarm chase** · Endless + Daily runs · Training Room · complete story with a real ending · real sprite art · 177 smoke tests ×3 green
 
 ---
 
@@ -103,7 +103,31 @@ Everything is produced by two committed tools, so the art is reproducible and re
 node tools/slice.js        # assets/art/*.png  -> assets/sprites/*.png + per-frame JSON
 node tools/preview.js      # contact sheet at true in-game scale
 node tools/render-test.js  # boots the REAL game files and writes PNG frames
+node tools/test-pack.js    # 22 checks for the animation import pipeline
 ```
+
+### Bringing in an animation from an external tool
+
+Any tool that exports a **numbered PNG sequence** (StykAnimate's `png-sequence`,
+Aseprite, ezgif, a Blender render…) drops straight into the game:
+
+```bash
+# 1. export frame-000001.png ... into a folder
+node tools/pack-frames.js ./my-export backflip --height 72 --register
+# 2. play it
+Art.drawAnim(ctx, 'backflip', frameIndex, x, y, 72, '#35f0ff', alpha)
+```
+
+`--register` inserts the atlas into the `EXTRA-ANIM` block of `js/art.js`
+(idempotent — re-running updates the entry instead of duplicating it), and the
+loader picks every atlas in `SPRITES` up automatically. Frames are trimmed to
+their ink, aligned on a bottom-centre pivot, and flattened to a white silhouette
+so the skin tint applies; pass `--keep` for art that must keep its own colours
+(drones, props, VFX).
+
+> **Why no code from StykAnimate:** that project is GPL‑3.0, so copying its code
+> would force this whole game to GPL. We only use its **output** — exported PNGs
+> that an artist owns — which is exactly what the GPL does not restrict.
 
 - **Hero sprites are white silhouettes on transparency**, tinted at runtime through a cached
   `source-in` canvas per skin colour — one atlas drives all 8 skins (zero extra downloads).
@@ -118,7 +142,7 @@ generation (mulberry32), localStorage persistence (`nesc.*`). Runs anywhere — 
 **Capacitor APK** (`.github/workflows/neon-escape-apk.yml` builds `NEON-ESCAPE.apk` on every push).
 
 ```bash
-node neon-escape/test/smoke.js   # 172 checks — logic, physics, levels, economy, swarm, art, render, perf
+node neon-escape/test/smoke.js   # 177 checks — logic, physics, levels, economy, swarm, art, render, perf
 ```
 
 ## 📖 Story

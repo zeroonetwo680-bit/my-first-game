@@ -309,7 +309,7 @@ sandbox.Image = function () {
 };
 ev('Art.reset(); Art.load();');
 check('art: ready after images load', "Art.ready === true");
-check('art: all four atlases present', "!!Art.img.run && !!Art.img.poses && !!Art.img.hunter && !!Art.img.wasp");
+check('art: all four atlases present', "!!Art.img.run && !!Art.img.poses && !!Art.img.botHunter && !!Art.img.botWasp");
 check('art: run atlas has 12 frames', "SPRITES.run.frames.length === 12");
 check('art: six poses keyed by name', "['tuck','fall','slide','wall','vault','dive'].every(function (n) { return !!SPRITES.poses.frames[n]; })");
 check('art: heroH matches hitbox', "SPRITES.heroH > 64 && SPRITES.heroH <= 72");
@@ -331,6 +331,11 @@ check('art: drawBot draws hunter + wasp', "(function(){ var before=drawCounts.dr
 check('art: Runner.draw uses sprites when ready', "(function(){ var before=drawCounts.drawImage||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
 check('art: ghosts still render', "(function(){ Game.run.dashT=0.3; Game.run.ghosts.push({x:Game.run.x,y:Game.run.y,state:'run',phase:0,flipT:0,slideT:0,life:0.2}); var before=drawCounts.drawImage||0; Runner.drawGhosts(Game.ctx, Game.run, 0, Game.skinDef()); return (drawCounts.drawImage||0) > before; })()");
 check('art: swarm bots render sprites', "(function(){ Game.swarm.active=true; Game.swarm.gap=200; var before=drawCounts.drawImage||0; Game.drawSwarm(Game.ctx, 0); return (drawCounts.drawImage||0) >= before + 7; })()");
+check('art: generic loader loads every atlas', "Object.keys(Art.img).length >= 4 && !!Art.img.run && !!Art.img.poses && !!Art.img.botHunter && !!Art.img.botWasp");
+check('art: has() is true only for frame sequences', "Art.has('run') === true && Art.has('poses') === false && Art.has('botHunter') === false && Art.frameCount('run') === 12");
+check('art: drawAnim clamps + wraps frame index', "(function(){ var before=drawCounts.drawImage||0; var a=Art.drawAnim(Game.ctx,'run',-1,100,400,72,'#eaf6ff',1); var b=Art.drawAnim(Game.ctx,'run',999,140,400,72,'#eaf6ff',1); return a && b && (drawCounts.drawImage||0) >= before+2; })()");
+check('art: drawAnim refuses unknown animations', "Art.drawAnim(Game.ctx,'nope',0,0,0,10,null,1) === false && Art.frameCount('nope') === 0 && Art.has('nope') === false");
+check('art: EXTRA-ANIM block is empty by default', "Object.keys(SPRITES).filter(function(k){return typeof SPRITES[k]==='object' && typeof SPRITES[k].file==='string';}).length === 4");
 check('art: falls back to vector when atlas missing', "(function(){ Art.ready=false; var before=drawCounts.beginPath||0; Runner.draw(Game.ctx, Game.run, 0, Game.skinDef()); var ok=(drawCounts.beginPath||0) > before; Art.ready=true; return ok; })()");
 
 console.log('\nms/frame = ' + (ev('globalThis.__ms') ? ev('globalThis.__ms').toFixed(4) : '?'));

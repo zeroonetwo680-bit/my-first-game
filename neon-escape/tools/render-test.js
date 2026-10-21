@@ -71,7 +71,8 @@ function shot(name) {
 
 (async () => {
   const ok = await waitArt(6000);
-  console.log('art ready:', ok, '| atlases:', ev('[!!Art.img.run, !!Art.img.poses, !!Art.img.hunter, !!Art.img.wasp].join(",")'));
+  const slots = ev('Object.keys(Art.img).map(function(k){return k+":"+(!!Art.img[k]);}).join(" ")');
+  console.log('art ready:', ok, '| atlases:', slots);
 
   // ---- menu ----
   ev("Game.state='menu'; Game.render()");
