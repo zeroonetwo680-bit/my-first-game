@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v7';   // v7: three.js presentation layer
+const VERSION = 'nw-v8';   // v8: 3D layer black-screen fixes
 const CORE = [
   './',
   './index.html',

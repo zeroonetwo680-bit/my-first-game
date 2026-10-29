@@ -493,6 +493,12 @@ canvas#game {
    canvas clears to transparent, so whatever the 2D renderer still
    draws (FX, bullets, health bars) composites over the 3D scene.
    ============================================================ */
+/* CRITICAL: canvas#game carries `background: var(--ink)`. A CSS background on a
+   canvas paints in front of anything behind it, so that opaque fill would hide
+   the WebGL canvas underneath completely: solid black, no cars. Drop it while
+   the 3D layer is live. */
+body.has3d canvas#game { background: transparent; }
+
 #gl {
   position: absolute; inset: 0;
   width: 100%; height: 100%;

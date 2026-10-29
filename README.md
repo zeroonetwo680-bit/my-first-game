@@ -45,9 +45,34 @@ off all fall back to the original 2D renderer, and the adaptive quality
 governor still owns the device pixel ratio.
 
 ```bash
-node tools/render3d-test.js   # 27 checks + /tmp/3d-proof.png
-node test/smoke.js            # 104 checks, includes the degradation path
+node tools/render3d-test.js      # 38 checks + /tmp/3d-proof.png
+node tools/render3d-preview.js   # software render of the real scene -> /tmp/3d-scene.png
+node test/smoke.js               # 104 checks, includes the degradation path
 ```
+
+#### Black-screen lessons (all regression-tested now)
+
+Three independent bugs produced the same symptom — "everything is black, the
+cars are gone". Each one is now pinned by a test so it cannot come back:
+
+1. **The 2D canvas was painting over the 3D one.** `canvas#game` carries
+   `background: var(--ink)`. A CSS background on a canvas paints in front of
+   anything behind it in the stacking order, so the opaque fill hid the WebGL
+   canvas completely — while the 2D car pass was skipped because the 3D layer
+   was "active". Fixed with `body.has3d canvas#game { background: transparent }`
+   plus a body class toggled by `Render3D.setEnabled`.
+2. **Metals with nothing to reflect render black.** `MeshStandardMaterial` with
+   `metalness` 0.7–0.95 and no environment map has no light to reflect. Fixed by
+   generating a procedural equirect environment (`scene.environment`) and
+   dropping metalness to 0.05–0.55.
+3. **Fog was measured from a camera 1.4× the screen height away.** Fixed
+   distances near 1100 put the entire deck inside the fog. Fog now scales with
+   the camera height, so the ground is never fogged.
+
+Bonus finding from the software preview: from a straight-down camera the dark
+glass cabin covered most of the car, so cars read as black rectangles. The cabin
+is now smaller and topped with a neon roof plate, and pillar caps became glowing
+rings instead of solid discs.
 
 ## Play
 

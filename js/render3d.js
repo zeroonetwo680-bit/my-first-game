@@ -90,6 +90,23 @@ const Render3D = {
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.15;
 
+      /* A lost context (driver reset, GPU pressure, tab backgrounded too long)
+         would otherwise leave a permanently black canvas. Drop back to the 2D
+         renderer instead of pretending to draw. */
+      const onLost = (e) => {
+        e.preventDefault();
+        this.ready = false;
+        this.enabled = false;
+        if (glCanvas.style) glCanvas.style.display = 'none';
+        try {
+          if (typeof document !== 'undefined' && document.body && document.body.classList) {
+            document.body.classList.remove('has3d');
+          }
+          if (typeof sync3dButton === 'function') sync3dButton();
+        } catch (err) {}
+      };
+      glCanvas.addEventListener('webglcontextlost', onLost, false);
+
       this.renderer = renderer;
       this.canvas = glCanvas;
       this._buildScene();
@@ -115,10 +132,10 @@ const Render3D = {
     const camera = new THREE.PerspectiveCamera(this.cfg.fov, 1, 1, 12000);
     camera.up.set(0, 0, -1);                         // world +Z => screen down
 
-    scene.add(new THREE.AmbientLight(0x9fc4ff, 1.15));
-    scene.add(new THREE.HemisphereLight(0x35f0ff, 0x1a0b22, 0.85));
+    scene.add(new THREE.AmbientLight(0xbcd6ff, 1.55));
+    scene.add(new THREE.HemisphereLight(0x6ff4ff, 0x2a1436, 1.25));
 
-    const sun = new THREE.DirectionalLight(0xdfe9ff, 2.1);
+    const sun = new THREE.DirectionalLight(0xeaf2ff, 2.4);
     sun.castShadow = true;
     sun.shadow.camera.near = 100;
     sun.shadow.camera.far = 3600;
@@ -130,7 +147,19 @@ const Render3D = {
     /* magenta rim light from the opposite side for the neon feel */
     const rim = new THREE.DirectionalLight(0xff3d81, 0.85);
     rim.position.set(-800, 700, -900);
+    rim.intensity = 1.1;
     scene.add(rim);
+
+    /* An environment map is MANDATORY for MeshStandardMaterial metalness.
+       A metal with nothing to reflect renders black; that is why the whole
+       arena looked like a void. This procedural equirect sky gives every
+       metal something bright to bounce. */
+    const env = this._envTexture();
+    if (env) {
+      env.mapping = THREE.EquirectangularReflectionMapping;
+      scene.environment = env;
+      scene.environmentIntensity = 0.85;
+    }
 
     this.scene = scene;
     this.camera = camera;
@@ -140,6 +169,51 @@ const Render3D = {
     this._allCars = [];
     this.ready = true;
     return scene;
+  },
+
+  /* Procedural equirectangular environment: a dark sky with two bright neon
+     lobes and a light horizon band. Cheap (one 512x256 canvas, built once) and
+     it is what stops every metal surface from rendering black. */
+  _envTexture() {
+    try {
+      const c = document.createElement('canvas');
+      c.width = 512; c.height = 256;
+      const g = c.getContext('2d');
+      if (!g) return null;
+
+      // vertical sky gradient
+      const sky = g.createLinearGradient(0, 0, 0, 256);
+      sky.addColorStop(0, '#2a4a7a');
+      sky.addColorStop(0.42, '#16233d');
+      sky.addColorStop(0.55, '#0c1424');
+      sky.addColorStop(1, '#050810');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, 512, 256);
+
+      // neon lobes: what the car bodies reflect
+      const lobe = (x, y, r, col) => {
+        const rad = g.createRadialGradient(x, y, 0, x, y, r);
+        rad.addColorStop(0, col);
+        rad.addColorStop(1, 'rgba(0,0,0,0)');
+        g.fillStyle = rad;
+        g.fillRect(x - r, y - r, r * 2, r * 2);
+      };
+      lobe(120, 70, 150, 'rgba(120, 245, 255, 0.95)');
+      lobe(390, 95, 160, 'rgba(255, 90, 150, 0.75)');
+      lobe(256, 30, 200, 'rgba(180, 220, 255, 0.40)');
+
+      // bright horizon so metal edges catch a highlight
+      const hz = g.createLinearGradient(0, 118, 0, 150);
+      hz.addColorStop(0, 'rgba(0,0,0,0)');
+      hz.addColorStop(0.5, 'rgba(150, 230, 255, 0.55)');
+      hz.addColorStop(1, 'rgba(0,0,0,0)');
+      g.fillStyle = hz;
+      g.fillRect(0, 118, 512, 32);
+
+      const tex = new THREE.CanvasTexture(c);
+      tex.colorSpace = THREE.SRGBColorSpace;
+      return tex;
+    } catch (e) { return null; }
   },
 
   /* ---------------- sizing ---------------- */
@@ -185,7 +259,9 @@ const Render3D = {
     if (this.renderer && this.renderer.capabilities) gridTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
 
     const floorMat = new THREE.MeshStandardMaterial({
-      map: gridTex, color: 0xffffff, roughness: 0.62, metalness: 0.42
+      map: gridTex, color: 0xffffff, roughness: 0.55, metalness: 0.18,
+      // the grid glows on its own so the deck can never read as a black void
+      emissive: 0xffffff, emissiveMap: gridTex, emissiveIntensity: 0.55
     });
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(W.w, W.h), floorMat);
     floor.rotation.x = -Math.PI / 2;
@@ -210,7 +286,7 @@ const Render3D = {
     }
 
     /* --- arena walls: tall slabs with a bright top edge --- */
-    const wallMat = new THREE.MeshStandardMaterial({ color: 0x121a2c, roughness: 0.4, metalness: 0.7 });
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x1c2740, roughness: 0.48, metalness: 0.20 });
     const edgeMat = new THREE.MeshBasicMaterial({ color: 0x35f0ff });
     const t = 34;
     const sides = [
@@ -231,7 +307,7 @@ const Render3D = {
 
     /* --- pillars (they already exist in the simulation) --- */
     if (game && game.pillars) {
-      const pMat = new THREE.MeshStandardMaterial({ color: 0x1b2540, roughness: 0.35, metalness: 0.75 });
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x27324f, roughness: 0.42, metalness: 0.22 });
       const pTop = new THREE.MeshBasicMaterial({ color: 0xff3d81 });
       for (const p of game.pillars) {
         const r = (p.r || 40) * 0.92, h = 150;
@@ -240,9 +316,20 @@ const Render3D = {
         body.position.y = h / 2;
         body.castShadow = true; body.receiveShadow = true;
         g.add(body);
-        const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.02, r * 1.02, 4, 8), pTop);
+        // a solid cap would cover the whole column from a top-down camera;
+        // a glowing ring keeps the column readable as a 3D object
+        const capGeo = new THREE.TorusGeometry(r * 0.94, r * 0.11, 6, 8);
+        capGeo.rotateX(Math.PI / 2);
+        const cap = new THREE.Mesh(capGeo, pTop);
         cap.position.y = h + 2;
         g.add(cap);
+        const lid = new THREE.Mesh(
+          new THREE.CircleGeometry(r * 0.92, 8),
+          new THREE.MeshStandardMaterial({ color: 0x33405f, roughness: 0.5, metalness: 0.2 })
+        );
+        lid.rotation.x = -Math.PI / 2;
+        lid.position.y = h + 1.5;
+        g.add(lid);
         g.position.set(p.x, 0, p.y);
         group.add(g);
       }
@@ -257,32 +344,32 @@ const Render3D = {
     const c = document.createElement('canvas');
     c.width = c.height = 512;
     const g = c.getContext('2d');
-    g.fillStyle = '#070a14';
+    g.fillStyle = '#0c1526';
     g.fillRect(0, 0, 512, 512);
 
     // subtle plate shading
     const rad = g.createRadialGradient(256, 256, 40, 256, 256, 360);
-    rad.addColorStop(0, 'rgba(28,40,66,0.55)');
+    rad.addColorStop(0, 'rgba(42,62,104,0.70)');
     rad.addColorStop(1, 'rgba(4,6,15,0.0)');
     g.fillStyle = rad;
     g.fillRect(0, 0, 512, 512);
 
     // fine grid
-    g.strokeStyle = 'rgba(53,240,255,0.16)';
+    g.strokeStyle = 'rgba(70,245,255,0.34)';
     g.lineWidth = 2;
     for (let i = 0; i <= 512; i += 64) {
       g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 512); g.stroke();
       g.beginPath(); g.moveTo(0, i); g.lineTo(512, i); g.stroke();
     }
     // major grid
-    g.strokeStyle = 'rgba(255,61,129,0.20)';
+    g.strokeStyle = 'rgba(255,61,129,0.40)';
     g.lineWidth = 3;
     for (let i = 0; i <= 512; i += 256) {
       g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 512); g.stroke();
       g.beginPath(); g.moveTo(0, i); g.lineTo(512, i); g.stroke();
     }
     // glowing intersection dots
-    g.fillStyle = 'rgba(53,240,255,0.30)';
+    g.fillStyle = 'rgba(120,250,255,0.55)';
     for (let y = 0; y <= 512; y += 256) {
       for (let x = 0; x <= 512; x += 256) {
         g.beginPath(); g.arc(x % 512, y % 512, 3, 0, Math.PI * 2); g.fill();
@@ -317,24 +404,37 @@ const Render3D = {
     chassisGeo.computeVertexNormals();
 
     const bodyMat = new THREE.MeshStandardMaterial({
-      color: new THREE.Color(bodyCol), roughness: 0.34, metalness: 0.72
+      color: new THREE.Color(bodyCol), roughness: 0.30, metalness: 0.34,
+      // a faint self-lit tint keeps the car readable even in shadow
+      emissive: new THREE.Color(bodyCol), emissiveIntensity: 0.16
     });
     const chassis = new THREE.Mesh(chassisGeo, bodyMat);
     chassis.position.y = h / 2 + 3;
     chassis.castShadow = true;
     g.add(chassis);
 
-    /* cabin */
+    /* cabin. Deliberately SMALL: the camera looks straight down, so anything
+       big and dark up here would hide the body colour and the car would read
+       as a black blob instead of a car. */
     const cab = new THREE.Mesh(
-      new THREE.BoxGeometry(len * 0.42, h * 0.78, wid * 0.72),
-      new THREE.MeshStandardMaterial({ color: 0x0a1422, roughness: 0.18, metalness: 0.95 })
+      new THREE.BoxGeometry(len * 0.34, h * 0.62, wid * 0.58),
+      new THREE.MeshStandardMaterial({ color: 0x2c4666, roughness: 0.10, metalness: 0.30 })
     );
-    cab.position.set(-len * 0.06, h + 3 + h * 0.34, 0);
+    cab.position.set(-len * 0.07, h + 3 + h * 0.28, 0);
     cab.castShadow = true;
     g.add(cab);
 
+    /* roof plate in the car's neon colour: this is what the top-down camera
+       actually sees, so the silhouette stays the team colour at game scale */
+    const roof = new THREE.Mesh(
+      new THREE.BoxGeometry(len * 0.30, 1.6, wid * 0.52),
+      new THREE.MeshBasicMaterial({ color: new THREE.Color(glow) })
+    );
+    roof.position.set(-len * 0.07, h + 3 + h * 0.60, 0);
+    g.add(roof);
+
     /* wheels */
-    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x090b12, roughness: 0.9, metalness: 0.1 });
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x14171f, roughness: 0.85, metalness: 0.05 });
     const wr = 6.4, ww = 3.6;
     const wheelGeo = new THREE.CylinderGeometry(wr, wr, ww, 12);
     wheelGeo.rotateX(Math.PI / 2);                   // axis along Z (lateral)
@@ -445,7 +545,7 @@ const Render3D = {
     if (!gun) {
       gun = new THREE.Mesh(
         new THREE.BoxGeometry(18, 2.4, 2.4),
-        new THREE.MeshStandardMaterial({ color: 0x2a3550, metalness: 0.9, roughness: 0.3 })
+        new THREE.MeshStandardMaterial({ color: 0x3d4c6b, metalness: 0.35, roughness: 0.32 })
       );
       gun.position.y = this.cfg.carH + 4;
       gun.castShadow = true;
@@ -471,6 +571,16 @@ const Render3D = {
     this.camera.aspect = vw / vh;
     this.camera.updateProjectionMatrix();
     this.camera.updateMatrixWorld();
+
+    /* Fog is measured from the CAMERA, and a straight-down camera sits ~1.4x
+       the screen height above the deck. Fixed distances near 1100 therefore put
+       the entire arena inside the fog and washed it out to the background
+       colour. Scale it to the camera height so the deck itself is never fogged
+       (the farthest visible ground point is only ~1.25 * H away). */
+    if (this.scene && this.scene.fog) {
+      this.scene.fog.near = H * 1.45;
+      this.scene.fog.far = H * 3.6;
+    }
 
     /* keep the shadow frustum tight around what the player can see */
     const half = Math.max(vw, vh) / (2 * zoom) + 260;
@@ -565,7 +675,7 @@ const Render3D = {
         tex.repeat.set(8, 8);
         const floor = new THREE.Mesh(
           new THREE.PlaneGeometry(2400, 2400),
-          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.5 })
+          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.5, metalness: 0.18, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.45 })
         );
         floor.rotation.x = -Math.PI / 2;
         floor.receiveShadow = true;
@@ -587,6 +697,7 @@ const Render3D = {
     this.camera.aspect = (this._vw || 1280) / (this._vh || 720);
     this.camera.near = 10; this.camera.far = 5000;
     this.camera.updateProjectionMatrix();
+    if (this.scene && this.scene.fog) { this.scene.fog.near = 900; this.scene.fog.far = 2400; }
     if (this.sun) {
       this.sun.position.set(400, 900, 400);
       this.sun.target.position.set(0, 0, 0);
@@ -606,6 +717,13 @@ const Render3D = {
     if (this.canvas && this.canvas.style) {
       this.canvas.style.display = this.enabled ? 'block' : 'none';
     }
+    /* canvas#game has an opaque CSS background; while the 3D layer is live it
+       must be transparent or it paints straight over the WebGL canvas. */
+    try {
+      if (typeof document !== 'undefined' && document.body && document.body.classList) {
+        document.body.classList.toggle('has3d', !!(this.enabled && this.ready));
+      }
+    } catch (e) {}
     if (this.enabled) {
       if (this.mode === 'game' && game && game.pillars) this.buildWorld(game);
     } else if (this._showCar) {

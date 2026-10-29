@@ -130,6 +130,81 @@ ok('arena has neon wall caps', meshes.filter(o => o.material && o.material.type 
 ok('each pillar becomes a body + cap', meshes.filter(o => o.type === 'Group').length === 2);
 ok('decals become a canvas texture on the deck', !!Render3D._decalTex && Render3D._decalTex.isTexture === true);
 
+/* ---------------- regression: the three bugs that made it black ---------------- */
+console.log('\n--- black-screen regressions ---');
+
+/* BUG 1: canvas#game paints an opaque CSS background straight over #gl. */
+(() => {
+  const css = fs.readFileSync(path.join(R, 'css/style.css'), 'utf8');
+  const gameHasBg = /canvas#game\s*\{[^}]*background:\s*var\(--ink\)/.test(css);
+  const neutralised = /body\.has3d\s+canvas#game\s*\{[^}]*background:\s*transparent/.test(css);
+  ok('canvas#game still opts into an opaque background', gameHasBg);
+  ok('that background is neutralised while 3D is live', neutralised);
+  ok('#gl sits BEHIND #game in the stacking order', (function () {
+    const gl = Number((/#gl\s*\{[^}]*z-index:\s*(-?\d+)/.exec(css) || [])[1]);
+    const gm = Number((/#game\s*\{\s*z-index:\s*(-?\d+)/.exec(css) || [])[1]);
+    return isFinite(gl) && isFinite(gm) && gl < gm;
+  })());
+})();
+
+/* BUG 2: a metal with nothing to reflect renders black. */
+ok('the scene has an environment map', !!Render3D.scene.environment);
+ok('the environment map is equirectangular', Render3D.scene.environment.mapping === THREE.EquirectangularReflectionMapping);
+ok('no lit material is dangerously metallic without reflections', (function () {
+  let worstMetal = 0, count = 0;
+  const check = (mat) => {
+    if (!mat || !mat.isMeshStandardMaterial && !mat.isMeshPhysicalMaterial) return;
+    count++;
+    worstMetal = Math.max(worstMetal, mat.metalness || 0);
+  };
+  Render3D.scene.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(check); });
+  const car = Render3D._carGroup({ len: 46, wid: 26, body: '#25c9e8', glow: '#35f0ff' });
+  car.traverse((o) => { if (o.material) (Array.isArray(o.material) ? o.material : [o.material]).forEach(check); });
+  return count >= 6 && worstMetal <= 0.6;
+})());
+ok('car bodies self-illuminate a little (never pure shadow)', (function () {
+  const car = Render3D._carGroup({ len: 46, wid: 26, body: '#25c9e8', glow: '#35f0ff' });
+  const body = car.children.find((o) => o.material && o.material.emissive && o.material.emissiveIntensity > 0);
+  return !!body && body.material.emissiveIntensity > 0.05;
+})());
+ok('the deck texture emits its own grid lines', (function () {
+  const floor = Render3D.world.group.children.find((o) => o.geometry && o.geometry.type === 'PlaneGeometry');
+  return !!floor && !!floor.material.emissiveMap && floor.material.emissiveIntensity > 0.2;
+})());
+
+/* BUG 3: fog measured from a camera that sits ~1.4x the screen height up. */
+ok('fog never swallows the deck', (function () {
+  const VW = 1280, VH = 720;
+  Render3D._vw = VW; Render3D._vh = VH;
+  return [0.62, 0.8, 1.05].every((zoom) => {
+    Render3D._applyCamera({ cam: { x: 1280, y: 1280, zoom } });
+    const H = Render3D.camera.position.y;             // camera -> ground distance
+    const f = Render3D.scene.fog;
+    return f && f.near > H * 1.15;
+  });
+})());
+
+/* the player's own car must actually land inside the frustum */
+ok('a car under the camera lands inside the frustum and passes depth', (function () {
+  const VW = 1280, VH = 720, z = 0.9;
+  Render3D._vw = VW; Render3D._vh = VH;
+  Render3D._applyCamera({ cam: { x: 1280, y: 1280, zoom: z } });
+  const v = new THREE.Vector3(1280, 8, 1280);   // body height of a car at the focus point
+  v.project(Render3D.camera);
+  return Math.abs(v.x) < 0.02 && Math.abs(v.y) < 0.05 && v.z > -1 && v.z < 1;
+})());
+
+/* toggling 3D must set the body class that drops the opaque background */
+ok('setEnabled toggles the has3d body class', (function () {
+  Render3D.ready = true;
+  Render3D.setEnabled(true, null);
+  const on = sandbox.document.body.classList.contains('has3d');
+  Render3D.setEnabled(false, null);
+  const off = sandbox.document.body.classList.contains('has3d');
+  Render3D.enabled = false;
+  return on === true && off === false;
+})());
+
 /* ---------------- camera projection = the critical property ---------------- */
 const VW = 1280, VH = 720;
 Render3D._vw = VW; Render3D._vh = VH;
