@@ -162,9 +162,15 @@ rings instead of solid discs.
 Serve the folder with any static server and open it:
 
 ```bash
-python3 -m http.server 8000
+# --bind 0.0.0.0: binding to the default 127.0.0.1 makes the page invisible to
+# anything outside this machine (containers, sandboxes, phone on the same LAN).
+python3 -m http.server 8000 --bind 0.0.0.0
 # → http://localhost:8000
 ```
+
+The game registers a service worker, so after a deploy a returning browser can
+keep serving the old files. Bump `VERSION` in `sw.js` (and the `?v=` query in
+`index.html`) when shipping, or hard-reload once with Ctrl+Shift+R.
 
 ## Aiming on touch
 
