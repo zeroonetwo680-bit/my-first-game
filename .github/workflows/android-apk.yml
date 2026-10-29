@@ -1,4 +1,4 @@
-name: Android APK (build on demand)
+name: Android build (APK + Play bundle)
 
 on:
   workflow_dispatch: {}
@@ -25,7 +25,8 @@ jobs:
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          # Capacitor 8 compiles against Java 21 and Play requires targetSdk 36.
+          java-version: '21'
 
       - uses: actions/setup-node@v4
         with:
@@ -35,7 +36,7 @@ jobs:
         run: bash scripts/prepare-web.sh
 
       - name: Install Capacitor
-        run: npm install --no-fund --no-audit @capacitor/core@6 @capacitor/cli@6 @capacitor/android@6
+        run: npm install --no-fund --no-audit @capacitor/core@8 @capacitor/cli@8 @capacitor/android@8
 
       - name: Init Capacitor project
         run: npx --yes cap init "NEON WRECKAGE" "com.neonwreckage.game" --web-dir www
@@ -46,11 +47,96 @@ jobs:
       - name: Sync web assets
         run: npx --yes cap sync android
 
+      - name: Configure the Android project for Play
+        env:
+          VERSION_CODE: ${{ vars.VERSION_CODE || '1' }}
+          VERSION_NAME: ${{ vars.VERSION_NAME || '1.0.0' }}
+          # base64 of the upload keystore (.jks). Missing => unsigned preview build.
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          # Capacitor's template ships applicationId com.getcapacitor.app;
+          # Play needs the id to be permanent, so set it before anything ships.
+          sed -i 's/applicationId "com.getcapacitor.app"/applicationId "com.neonwreckage.game"/' \
+            android/app/build.gradle
+          grep -q 'applicationId "com.neonwreckage.game"' android/app/build.gradle
+
+          # The upload key decides whether this build can actually be published.
+          # Without it Gradle has no way to sign a release bundle, so we say so
+          # loudly instead of shipping a bundle Play would reject.
+          SIGN_ARGS=""
+          if [ -n "${KEYSTORE_BASE64:-}" ]; then
+            KEYSTORE_PATH="$RUNNER_TEMP/upload.jks"
+            printf '%s' "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_PATH"
+            echo "KEYSTORE_PATH=$KEYSTORE_PATH" >> "$GITHUB_ENV"
+            echo "SIGNED=true" >> "$GITHUB_ENV"
+            SIGN_ARGS="--sign"
+            echo "upload keystore: $(stat -c%s "$KEYSTORE_PATH") bytes"
+          else
+            echo "SIGNED=false" >> "$GITHUB_ENV"
+            echo "::warning::No KEYSTORE_BASE64 secret. This run produces an UNSIGNED preview bundle that Play will REJECT. Add KEYSTORE_BASE64, KEYSTORE_PASSWORD, KEY_ALIAS and KEY_PASSWORD in Settings > Secrets and variables > Actions."
+          fi
+
+          python3 scripts/patch-android-gradle.py android/app/build.gradle \
+            --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" $SIGN_ARGS
+          # adaptive launcher icons (Android 8+ crops a flat square icon)
+          python3 scripts/gen-android-icons.py android/app/src/main/res
+          grep -E 'versionCode|versionName' android/app/build.gradle | head -4
+
+      - name: Show the SDK levels that Play will check
+        run: |
+          set -euo pipefail
+          grep -E "compileSdkVersion|targetSdkVersion|minSdkVersion" android/variables.gradle
+          SDK=$(grep -oP 'targetSdkVersion\s*=\s*\K\d+' android/variables.gradle || true)
+          echo "targetSdk=$SDK"
+          # From 2026-08-31 Play rejects submissions below API 36.
+          test -n "$SDK" && test "$SDK" -ge 36
+
       - name: Build debug APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+
+      - name: Build Play bundle (.aab)
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          cd android
+          chmod +x gradlew
+          if [ "${SIGNED:-false}" = "true" ]; then
+            ./gradlew bundleRelease --no-daemon
+            echo "AAB=app/build/outputs/bundle/release/app-release.aab" >> "$GITHUB_ENV"
+            echo "AAB_NAME=NEON-WRECKAGE.aab" >> "$GITHUB_ENV"
+          else
+            # debug-signed fallback: installable for local review, not publishable
+            ./gradlew bundleDebug --no-daemon
+            echo "AAB=app/build/outputs/bundle/debug/app-debug.aab" >> "$GITHUB_ENV"
+            echo "AAB_NAME=NEON-WRECKAGE-unsigned-preview.aab" >> "$GITHUB_ENV"
+          fi
+
+      - name: Verify the bundle holds the whole game
+        run: |
+          set -euo pipefail
+          AAB="android/$AAB"
+          test -f "$AAB"
+          echo "$AAB_NAME: $(stat -c%s "$AAB") bytes"
+          LIST=$(unzip -l "$AAB")
+          # a real bundle = a manifest module plus the Capacitor web payload
+          echo "$LIST" | grep -q 'base/manifest/AndroidManifest.xml'
+          echo "$LIST" | grep -q 'base/assets/public/index.html'
+          echo "$LIST" | grep -q 'base/assets/public/js/game.js'
+          echo "bundle contents ok"
+
+      - name: Upload Play bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: neon-wreckage-aab
+          path: android/app/build/outputs/bundle/**/*.aab
+          if-no-files-found: error
 
       - name: Upload APK artifact
         uses: actions/upload-artifact@v4
@@ -100,6 +186,12 @@ jobs:
             gh release create android-latest --target "$GITHUB_SHA" \
               --title "NEON WRECKAGE — Android APK" --notes "$NOTES"
           gh release upload android-latest NEON-WRECKAGE.apk --clobber
+          if [ "${SIGNED:-false}" = "true" ]; then
+            gh release upload android-latest "android/$AAB#NEON-WRECKAGE.aab" --clobber
+            echo "published signed bundle"
+          else
+            echo "no upload key: bundle kept as a workflow artifact only"
+          fi
           gh release edit android-latest --notes "$NOTES"
           echo "published $SHA"
 

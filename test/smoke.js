@@ -579,6 +579,102 @@ for (let i = 0; i < 600; i++) {
 `);
 check('post-restart playing', 'Game.state', s => s === 'playing');
 
+console.log('--- first-run coaching ---');
+run(`
+store.set('nw.coachDone', false);
+Game.startRun();
+Coach.stop(false);
+store.set('nw.coachDone', false);
+`);
+
+check('coach: starts on the first run', `
+store.set('nw.coachDone', false);
+Coach.start();
+Coach.active === true && Coach.index === 0
+`, v => v === true);
+
+check('coach: is skipped once the flag is stored', `
+Coach.stop(true);
+Coach.start();
+Coach.active === false && Coach.done === true
+`, v => v === true);
+
+check('coach: force replays it from the menu', `
+Coach.start({ force: true });
+Coach.active === true && Coach.index === 0
+`, v => v === true);
+
+check('coach: driving advances the first step', `
+Coach.stop(false); store.set('nw.coachDone', false);
+Coach.start();
+Game.player.vx = 200; Game.player.vy = 0;
+Coach.update(0.016, Game);
+var moved = Coach.index;
+Game.player.vx = 0;
+moved === 1
+`, v => v === true);
+
+check('coach: touch runs teach aiming, desktop runs teach firing', `
+Coach.stop(false); store.set('nw.coachDone', false);
+Coach.start();
+var touchWaits = Coach.steps.map(function (s) { return s.wait; }).join(',');
+Coach.stop(false);
+Coach.touchOverride = true; Coach.start({ force: true });
+var touch = Coach.steps.map(function (s) { return s.wait; }).join(',');
+Coach.stop(false);
+Coach.touchOverride = false; Coach.start({ force: true });
+var desk = Coach.steps.map(function (s) { return s.wait; }).join(',');
+Coach.stop(false);
+Coach.touchOverride = undefined;
+touch.indexOf('aim') >= 0 && desk.indexOf('fire') >= 0 && touch !== desk
+`, v => v === true);
+
+check('coach: an aiming drag advances a touch step', `
+Coach.stop(false); store.set('nw.coachDone', false);
+Coach.touchOverride = true;
+Coach.start({ force: true });
+Game.state = 'playing'; Game.player.dead = false;
+Coach.next();                       // land on the aim step
+var onAim = Coach.current() && Coach.current().wait === 'aim';
+Input.aim.active = true; Input.aim.moved = true; Input.aim.mag = 50; Input.aim.angle = 0;
+Coach.update(0.016, Game);
+var advanced = Coach.index;
+Input.resetAim();
+Coach.stop(false); Coach.touchOverride = undefined;
+onAim && advanced >= 2
+`, v => v === true);
+
+check('coach: does not advance while paused', `
+Coach.stop(false); store.set('nw.coachDone', false);
+Coach.start();
+Game.state = 'paused';
+Coach.update(1.0, Game);
+var held = Coach.index;
+Game.state = 'playing';
+held === 0
+`, v => v === true);
+
+check('coach: finishing stores the flag', `
+Coach.stop(false); store.set('nw.coachDone', false);
+Coach.start();
+for (var i = 0; i < 8; i++) Coach.next();
+Coach.active === false && store.get('nw.coachDone', false) === true
+`, v => v === true);
+
+check('coach: leaving the arena stops it without marking it seen', `
+store.set('nw.coachDone', false);
+Coach.start();
+Game.enterMenu();
+Coach.active === false && store.get('nw.coachDone', false) === false
+`, v => v === true);
+
+check('coach: every step has keys, a title and a body', `
+Coach.start({ force: true });
+var ok = Coach.steps.every(function (s) { return s.keys && s.title && s.body; });
+Coach.stop(false);
+ok
+`, v => v === true);
+
 console.log('--- touch aiming (aim pad + smarter assist) ---');
 run(`
 Game.startRun();

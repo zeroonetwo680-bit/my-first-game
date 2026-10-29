@@ -733,3 +733,86 @@ canvas#game {
   user-select: text; -webkit-user-select: text;
 }
 #build-stamp::before { content: '\25CF '; color: #35f0ff; opacity: 0.7; }
+
+
+/* ============================================================
+   First-run coaching
+   Sits low on the screen so it never covers the car or the reticle, and is
+   pointer-events:none so it can never eat a touch meant for the controls.
+   ============================================================ */
+#coach {
+  position: absolute; left: 50%; bottom: calc(18% + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  z-index: 12; pointer-events: none;
+  display: flex; justify-content: center;
+  width: min(560px, 92vw);
+  transition: opacity 0.25s ease;
+}
+#coach.hidden { opacity: 0; visibility: hidden; }
+#coach-card {
+  width: 100%;
+  padding: 12px 16px 13px;
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(10, 18, 32, 0.92), rgba(5, 9, 18, 0.94));
+  border: 1px solid rgba(53, 240, 255, 0.35);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.6), inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  text-align: center;
+  animation: coachIn 0.32s cubic-bezier(.2,.9,.3,1.2);
+}
+@keyframes coachIn {
+  from { opacity: 0; transform: translateY(10px) scale(0.97); }
+  to { opacity: 1; transform: none; }
+}
+#coach-keys {
+  font: 700 11px/1 var(--hud-font);
+  letter-spacing: 3px;
+  color: #35f0ff;
+  margin-bottom: 7px;
+  text-shadow: 0 0 10px rgba(53, 240, 255, 0.6);
+}
+#coach-title {
+  font: 900 17px/1.2 var(--hud-font);
+  letter-spacing: 2px;
+  color: #fff;
+  margin-bottom: 5px;
+}
+#coach-body {
+  font: 600 13px/1.45 var(--body-font);
+  color: rgba(200, 220, 240, 0.85);
+}
+#coach-skip {
+  margin-top: 9px;
+  padding: 5px 14px;
+  font: 700 10px/1 var(--hud-font);
+  letter-spacing: 2px;
+  color: rgba(180, 210, 230, 0.8);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  pointer-events: auto;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+#coach-skip:hover { background: rgba(53, 240, 255, 0.14); color: #eaffff; }
+#coach-skip:active { transform: scale(0.96); }
+.btn.ghost {
+  background: transparent;
+  border: 1px solid rgba(53, 240, 255, 0.35);
+  color: rgba(200, 235, 245, 0.9);
+}
+.btn.ghost:hover { background: rgba(53, 240, 255, 0.10); }
+
+/* the step counter, so it reads as a short sequence rather than a nag */
+#coach::after {
+  content: attr(data-step);
+  position: absolute; right: 10px; bottom: 6px;
+  font: 700 9px/1 var(--hud-font); letter-spacing: 2px;
+  color: rgba(120, 170, 200, 0.55);
+}
+@media (max-width: 560px) {
+  #coach-title { font-size: 15px; }
+  #coach-body { font-size: 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  #coach-card { animation: none; }
+}

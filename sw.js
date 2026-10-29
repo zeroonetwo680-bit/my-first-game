@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v12';  // v12: clearer aim indicator
+const VERSION = 'nw-v13';  // v13: first-run coaching + Play-ready build
 const CORE = [
   './',
   './index.html',

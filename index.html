@@ -39,7 +39,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="css/style.css?v=12">
+<link rel="stylesheet" href="css/style.css?v=14">
 </head>
 <body>
 <div id="app">
@@ -71,6 +71,19 @@
       <button id="btn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
     </div>
     <div id="offline-badge" class="hidden">&#9889; OFFLINE &mdash; PROGRESS SAVES LOCALLY</div>
+  </div>
+
+  <!-- First-run coaching. The Play listing gives a player about fifteen
+       seconds to understand the game; a controls list on the menu is not read.
+       These three hints appear over live play, one at a time, and each waits
+       for the action it is asking for. -->
+  <div id="coach" class="hidden">
+    <div id="coach-card">
+      <div id="coach-keys"></div>
+      <div id="coach-title"></div>
+      <div id="coach-body"></div>
+      <button id="coach-skip" type="button">SKIP</button>
+    </div>
   </div>
 
   <div id="banner"></div>
@@ -122,6 +135,7 @@
         <button class="diff-btn" data-diff="inferno">INFERNO</button>
       </div>
       <div id="controls-hint" class="hint"></div>
+      <button id="btn-coach" class="btn small-btn ghost" type="button">HOW TO PLAY</button>
       <div class="hs-block">
         <h2>TOP DRIVERS<span id="hs-diff-tag-start"></span></h2>
         <div id="start-highscores" class="hs-table"></div>
@@ -199,8 +213,8 @@
 <script src="js/input.js"></script>
 <script src="js/platform.js"></script>
 <script src="vendor/three.min.js"></script>
-<script src="js/render3d.js?v=12"></script>
-<script src="js/game.js?v=12"></script>
+<script src="js/render3d.js?v=14"></script>
+<script src="js/game.js?v=14"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {

@@ -416,6 +416,7 @@ const Game = {
   },
 
   enterMenu() {
+    if (typeof Coach !== 'undefined') Coach.stop(false);
     this.resetWorld();
     this.state = 'menu';
     Platform.keepAwake(false);
@@ -455,6 +456,7 @@ const Game = {
     this.betweenTimer = 0.9;
     this.betweenWaves = true;
     document.activeElement && document.activeElement.blur && document.activeElement.blur();
+    if (typeof Coach !== 'undefined') Coach.start();
   },
 
   togglePause() {
@@ -2403,6 +2405,131 @@ function drawAim(p, t) {
 }
 
 /* ============================================================
+   First-run coaching
+   Three steps, each waiting for the action it asks for instead of a timer, so
+   it teaches rather than interrupts. Seen once per install (stored), and
+   skippable at any time. The point is the Play listing: a new player has to
+   understand driving, firing and aiming without reading a menu.
+   ============================================================ */
+const Coach = {
+  steps: [],
+  index: 0,
+  active: false,
+  done: false,
+  t: 0,
+  armed: {},
+
+  /* Overridable so the headless tests can exercise both the touch and the
+     desktop script without re-loading the whole game. */
+  isTouch() {
+    if (typeof this.touchOverride === 'boolean') return this.touchOverride;
+    return typeof IS_TOUCH !== 'undefined' && IS_TOUCH;
+  },
+
+  start(opts) {
+    this.done = store.get('nw.coachDone', false) === true;
+    if (this.done && !(opts && opts.force)) return false;
+    this.steps = this.isTouch()
+      ? [
+        { keys: 'DRAG', title: 'DRIVE', body: 'Drag anywhere on the LEFT half of the screen to steer.', wait: 'move' },
+        { keys: 'RIGHT SIDE', title: 'AIM', body: 'Drag on the RIGHT half and the gun follows your thumb. It fires while you hold.', wait: 'aim' },
+        { keys: 'GOLD', title: 'LOCK ON', body: 'When the sight line turns GOLD the shot will land. Let go and auto-aim takes over.', wait: 'aim', hold: 1.6 }
+      ]
+      : [
+        { keys: 'W A S D', title: 'DRIVE', body: 'Steer with WASD or the arrow keys.', wait: 'move' },
+        { keys: 'SPACE / CLICK', title: 'FIRE', body: 'Hold Space or the mouse button. The mouse aims the gun.', wait: 'fire' },
+        { keys: 'RIGHT CLICK', title: 'SWAP', body: 'Q or right-click swaps weapons. SHIFT is nitro, E fires a rocket.', wait: null, hold: 2.2 }
+      ];
+    this.index = 0;
+    this.active = true;
+    this.t = 0;
+    this.armed = {};
+    this.render();
+    return true;
+  },
+
+  stop(save) {
+    this.active = false;
+    this.el().classList.add('hidden');
+    if (save !== false) {
+      this.done = true;
+      try { store.set('nw.coachDone', true); } catch (e) {}
+      this.done = true;
+    }
+  },
+
+  el() {
+    return document.getElementById('coach') || { classList: { add() {}, remove() {}, toggle() {} }, setAttribute() {}, style: {} };
+  },
+
+  /* Small helper: the headless test harness and any future DOM change can
+     return a stub, so every element access goes through this. */
+  _set(id, prop, value) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el[prop] = value;
+  },
+
+  current() {
+    return this.active ? this.steps[this.index] : null;
+  },
+
+  render() {
+    const st = this.current();
+    const el = this.el();
+    if (!st) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+    if (el.setAttribute) el.setAttribute('data-step', (this.index + 1) + '/' + this.steps.length);
+    this._set('coach-keys', 'textContent', st.keys);
+    this._set('coach-title', 'textContent', st.title);
+    this._set('coach-body', 'textContent', st.body);
+    /* restart the entrance animation so each step reads as a new card */
+    const card = document.getElementById('coach-card');
+    if (card) {
+      if (card && card.style) {
+        card.style.animation = 'none';
+        void card.offsetWidth;
+        card.style.animation = '';
+      }
+    }
+  },
+
+  next() {
+    this.index++;
+    this.t = 0;
+    this.armed = {};
+    if (this.index >= this.steps.length) { this.stop(true); return; }
+    this.render();
+  },
+
+  update(dt, game) {
+    if (!this.active) return;
+    const st = this.current();
+    if (!st) return;
+    this.t += dt;
+
+    /* never talk over a pause, a death or a menu */
+    if (game.state !== 'playing' || (game.player && game.player.dead)) return;
+
+    if (st.wait === 'move') {
+      const p = game.player;
+      if (p && Math.hypot(p.vx || 0, p.vy || 0) > 60) { this.next(); return; }
+    } else if (st.wait === 'fire') {
+      if (Input.getFire()) { this.next(); return; }
+    } else if (st.wait === 'aim') {
+      const aiming = (Input.aimAiming && Input.aimAiming()) ||
+        (Input.mouseAiming && Input.mouseAiming() && !IS_TOUCH_ONLY);
+      if (aiming) this.armed.aim = true;
+      if (this.armed.aim && st.hold && this.t > st.hold) { this.next(); return; }
+      if (this.armed.aim && !st.hold) { this.next(); return; }
+    }
+
+    /* a step that waits for nothing still advances, just gently */
+    if (!st.wait && this.t > (st.hold || 2)) this.next();
+  }
+};
+
+/* ============================================================
    Drawing helpers
    ============================================================ */
 function drawCar(car, spr) {
@@ -2568,6 +2695,8 @@ function wireUI() {
   on('btn-again', () => { AudioSys.ui(); Game.startRun(); });
   on('btn-menu', () => { AudioSys.ui(); Game.enterMenu(); });
   on('btn-save', () => Game.saveScore());
+  on('coach-skip', () => { if (typeof Coach !== 'undefined') Coach.stop(true); });
+  on('btn-coach', () => { AudioSys.ui(); Game.startRun(); Coach.start({ force: true }); });
   on('car-prev', () => Game.viewCar(-1));
   on('car-next', () => Game.viewCar(1));
   on('car-action', () => Game.carAction());
@@ -2668,6 +2797,7 @@ function frame(now) {
   }
 
   Input.endFrame();
+  if (typeof Coach !== 'undefined') Coach.update(dt, Game);
   Game.render();
   Game.updateHUD();
   Achievements.update(dt);
