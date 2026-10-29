@@ -8,6 +8,10 @@ rm -rf www
 mkdir -p www/assets/fonts
 cp index.html www/
 cp -r css js www/
+# vendor/ holds three.js. Missing it would not break the build - index.html
+# would simply 404 on the script and the game would quietly fall back to the 2D
+# renderer, which is exactly the "the 3D is gone in the APK" failure.
+cp -r vendor www/
 cp -r assets/* www/assets/
 
 # ---- vendor Google Fonts locally ----

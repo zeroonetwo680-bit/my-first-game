@@ -59,6 +59,25 @@ jobs:
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
+      - name: Verify the APK really carries this build
+        run: |
+          set -euo pipefail
+          SHA="${GITHUB_SHA:0:7}"
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          rm -rf /tmp/apkx && mkdir -p /tmp/apkx
+          unzip -o -q "$APK" -d /tmp/apkx
+          # Capacitor packs the web bundle under assets/public
+          IDX=$(find /tmp/apkx -name index.html -path '*public*' | head -1)
+          echo "bundle html: $IDX"
+          test -n "$IDX"
+          # the stamp proves which commit is inside
+          grep -q "build $SHA" "$IDX" && echo "stamp ok: build $SHA"
+          # three.js must be bundled, or the game silently drops to 2D
+          GL=$(find /tmp/apkx -name 'three.min.js' | head -1)
+          test -n "$GL" && echo "three.js bundled: $(stat -c%s "$GL") bytes"
+          # and the aiming code must be there
+          grep -rq "aimAiming" /tmp/apkx && echo "touch aiming present"
+
       - name: Publish to GitHub Releases
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
