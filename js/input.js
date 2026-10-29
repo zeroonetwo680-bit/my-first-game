@@ -34,6 +34,7 @@ const Input = {
     this.el.knob = document.getElementById('stick-knob');
     this.el.aimStick = document.getElementById('aim-stick');
     this.el.aimKnob = document.getElementById('aim-knob');
+    this.el.aimDir = document.getElementById('aim-dir');
     this.el.aimHint = document.getElementById('aim-hint');
 
     /* ---------------- keyboard ---------------- */
@@ -146,6 +147,9 @@ const Input = {
           this.aim.moved = true;
         }
         if (this.el.aimKnob) this.el.aimKnob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+        if (this.el.aimDir && this.aim.moved) {
+          this.el.aimDir.style.transform = 'rotate(' + this.aim.angle + 'rad)';
+        }
         e.preventDefault();
       });
       const endAim = (e) => {
@@ -304,6 +308,7 @@ const Input = {
 
   /** right-stick aim override, null when idle */
   resetAim() {
+    this.setAimLocked(false);
     this.aim.active = false;
     this.aim.id = -1;
     this.aim.dx = 0; this.aim.dy = 0; this.aim.mag = 0; this.aim.moved = false;
@@ -319,6 +324,15 @@ const Input = {
   /* absolute aim direction in radians, or null when the pad is not in use */
   aimAngle() {
     return this.aimAiming() ? this.aim.angle : null;
+  },
+
+  /* the pad border flashes gold when the shot will land */
+  setAimLocked(on) {
+    if (this._aimLocked === !!on) return;
+    this._aimLocked = !!on;
+    if (this.el.aimStick && this.el.aimStick.classList) {
+      this.el.aimStick.classList.toggle('on-target', !!on);
+    }
   },
 
   /* holding the aim pad fires too: two thumbs cannot also reach FIRE */

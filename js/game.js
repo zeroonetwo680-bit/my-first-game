@@ -2245,59 +2245,161 @@ function damagePlayer(d, sx, sy) {
      so the player can always see where the gun is pointing. It is the single
      clearest piece of feedback for touch aiming - without it "the gun is stuck
      forward" and "the gun is aiming at nothing" look exactly the same. */
+/* Does the shot actually land? Casts the turret ray against every hostile and
+   returns the first body it crosses. Used by the indicator so "pointing at" and
+   "about to hit" are different, visible states. */
+function armRayHit(p, ang, maxDist) {
+  if (!Game.enemies || !Game.enemies.length) return null;
+  const dx = Math.cos(ang), dy = Math.sin(ang);
+  let best = null, bestT = maxDist;
+  for (let i = 0; i < Game.enemies.length; i++) {
+    const e = Game.enemies[i];
+    if (e.dead) continue;
+    const ox = e.x - p.x, oy = e.y - p.y;
+    const proj = ox * dx + oy * dy;
+    if (proj < 0) continue;
+    const perp2 = ox * ox + oy * oy - proj * proj;
+    const r = (e.r || 18) + 6;
+    if (perp2 > r * r) continue;
+    const tHit = proj - Math.sqrt(r * r - perp2);
+    if (tHit >= 0 && tHit < bestT) { bestT = tHit; best = e; }
+  }
+  return best ? { enemy: best, dist: bestT } : null;
+}
+
+/* The aim indicator.
+   Design constraints that came out of using it: it used to be a thin
+   translucent dash that vanished over the bright neon cars, it was only 150 px
+   long, and it could not distinguish "pointing into empty space" from "the shot
+   will land". So now: an outline pass underneath keeps it readable over
+   anything, the line is longer and carries a marching highlight, the reticle
+   spins so it never reads as a static smear, and the whole thing turns gold the
+   moment the ray actually crosses a hostile body. */
 function drawAim(p, t) {
-    const manual = !!Game.aimManual;
-    const target = Game.aimTarget;
-    const len = 150 + (p.boost ? 26 : 0);
-    const col = manual ? '#ff3d81' : '#35f0ff';
+  const manual = !!Game.aimManual;
+  const target = Game.aimTarget;
+  const len = 250 + (p.boost ? 40 : 0);
+  const base = manual ? '#ff3d81' : '#35f0ff';
 
-    const nx = p.x + Math.cos(p.turret) * 26;
-    const ny = p.y + Math.sin(p.turret) * 26;
-    const ex = p.x + Math.cos(p.turret) * len;
-    const ey = p.y + Math.sin(p.turret) * len;
+  const hit = armRayHit(p, p.turret, len);
+  Game.aimHit = hit;
+  const onTarget = !!hit;
+  /* mirror the lock-on onto the thumb pad so it is felt where the player is
+     looking (their hand), not only in the middle of the screen */
+  if (typeof Input !== 'undefined' && Input.setAimLocked) Input.setAimLocked(onTarget && manual);
+  const col = onTarget ? '#ffd24d' : base;
 
-    ctx.save();
-    ctx.globalAlpha = manual ? 0.75 : 0.42;
-    ctx.strokeStyle = col;
-    ctx.lineWidth = manual ? 2.2 : 1.6;
-    if (ctx.setLineDash) ctx.setLineDash([9, 9]);
-    if (ctx.lineDashOffset !== undefined) ctx.lineDashOffset = -((t * 60) % 18);
+  const nx = p.x + Math.cos(p.turret) * 24;
+  const ny = p.y + Math.sin(p.turret) * 24;
+  const lineLen = onTarget ? Math.max(40, hit.dist - 6) : len;
+  const ex = p.x + Math.cos(p.turret) * lineLen;
+  const ey = p.y + Math.sin(p.turret) * lineLen;
+
+  const solid = manual || onTarget;          // strong when the player drives it
+  const alpha = solid ? 0.95 : 0.62;
+
+  ctx.save();
+
+  /* 1. dark outline pass - this is what stops it dissolving into the cars */
+  ctx.globalAlpha = solid ? 0.55 : 0.38;
+  ctx.strokeStyle = '#04060f';
+  ctx.lineWidth = 7;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(nx, ny);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+
+  /* 2. core line, slightly tapered so it reads as aiming outward */
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2.6;
+  ctx.beginPath();
+  ctx.moveTo(nx, ny);
+  ctx.lineTo(ex, ey);
+  ctx.stroke();
+
+  /* 3. marching highlight: motion makes the direction unmistakable */
+  if (ctx.setLineDash) {
+    ctx.setLineDash([5, 16]);
+    if (ctx.lineDashOffset !== undefined) ctx.lineDashOffset = -((t * 150) % 21);
+    ctx.globalAlpha = solid ? 1 : 0.75;
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 1.7;
     ctx.beginPath();
     ctx.moveTo(nx, ny);
     ctx.lineTo(ex, ey);
     ctx.stroke();
-    if (ctx.setLineDash) ctx.setLineDash([]);
+    ctx.setLineDash([]);
+  }
 
-    ctx.globalAlpha = manual ? 0.95 : 0.6;
+  /* 4. reticle: two spinning arcs, a steady ring and a centre pip */
+  const spin = t * (onTarget ? 3.2 : 1.4);
+  ctx.globalAlpha = solid ? 1 : 0.8;
+  ctx.strokeStyle = col;
+  ctx.lineWidth = onTarget ? 2.6 : 2.0;
+
+  ctx.beginPath();
+  ctx.arc(ex, ey, 9.5, 0, TAU);
+  ctx.stroke();
+
+  ctx.lineWidth = 3.2;
+  for (let i = 0; i < 2; i++) {
+    const a0 = spin + i * Math.PI;
     ctx.beginPath();
-    ctx.arc(ex, ey, 9, 0, TAU);
+    ctx.arc(ex, ey, 15, a0, a0 + 0.85);
     ctx.stroke();
-    ctx.beginPath();
+  }
+
+  /* corner ticks, tightened when the shot will land */
+  const tickOut = onTarget ? 19 : 22, tickIn = onTarget ? 15.5 : 16.5;
+  ctx.lineWidth = 2.2;
+  ctx.beginPath();
+  for (let i = 0; i < 4; i++) {
+    const a = Math.PI / 4 + i * Math.PI / 2;
+    ctx.moveTo(ex + Math.cos(a) * tickIn, ey + Math.sin(a) * tickIn);
+    ctx.lineTo(ex + Math.cos(a) * tickOut, ey + Math.sin(a) * tickOut);
+  }
+  ctx.stroke();
+
+  ctx.fillStyle = col;
+  ctx.beginPath();
+  ctx.arc(ex, ey, onTarget ? 2.8 : 2.0, 0, TAU);
+  ctx.fill();
+  ctx.restore();
+
+  /* 5. lock brackets: the assist's pick, or whatever the ray is about to hit */
+  const marked = onTarget ? hit.enemy : (target && !target.dead ? target : null);
+  if (marked) {
+    const mx = marked.x, my = marked.y;
+    const r = (marked.r || 18) + (onTarget ? 9 : 12);
+    const pulse = onTarget ? 0.75 + 0.25 * Math.sin(t * 14) : 0.45 + 0.25 * Math.sin(t * 7);
+    ctx.save();
+    ctx.globalAlpha = pulse;
+    ctx.strokeStyle = '#ffd24d';
+    ctx.lineWidth = onTarget ? 3 : 2;
+    const gap = r * 0.72;
     for (let i = 0; i < 4; i++) {
-      const a = p.turret + Math.PI / 2 + i * Math.PI / 2;
-      ctx.moveTo(ex + Math.cos(a) * 6, ey + Math.sin(a) * 6);
-      ctx.lineTo(ex + Math.cos(a) * 14, ey + Math.sin(a) * 14);
+      const sx = i % 2 ? 1 : -1, sy = i < 2 ? -1 : 1;
+      ctx.beginPath();
+      ctx.moveTo(mx + sx * gap, my + sy * r);
+      ctx.lineTo(mx + sx * r, my + sy * r);
+      ctx.lineTo(mx + sx * r, my + sy * gap);
+      ctx.stroke();
     }
-    ctx.stroke();
+    /* a slow sweep ring around a confirmed target */
+    if (onTarget && ctx.setLineDash) {
+      ctx.globalAlpha = 0.5;
+      ctx.lineWidth = 1.6;
+      ctx.setLineDash([6, 10]);
+      if (ctx.lineDashOffset !== undefined) ctx.lineDashOffset = -((t * 40) % 16);
+      ctx.beginPath();
+      ctx.arc(mx, my, r + 7, 0, TAU);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
-
-    /* lock brackets on whatever the assist picked, so auto-aim is visible */
-    if (target && !target.dead) {
-      ctx.save();
-      ctx.globalAlpha = 0.55 + 0.35 * Math.sin(t * 8);
-      ctx.strokeStyle = '#ffd24d';
-      ctx.lineWidth = 2;
-      const r = target.r + 11, s2 = 6;
-      for (let i = 0; i < 4; i++) {
-        const sx = i % 2 ? 1 : -1, sy = i < 2 ? -1 : 1;
-        ctx.beginPath();
-        ctx.moveTo(target.x + sx * r - sx * s2, target.y + sy * r);
-        ctx.lineTo(target.x + sx * r, target.y + sy * r);
-        ctx.lineTo(target.x + sx * r, target.y + sy * r - sy * s2);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
+  }
 }
 
 /* ============================================================

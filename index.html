@@ -39,7 +39,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="css/style.css?v=11">
+<link rel="stylesheet" href="css/style.css?v=12">
 </head>
 <body>
 <div id="app">
@@ -87,7 +87,7 @@
          it and the gun follows the drag direction; the gun also fires while you
          hold it. Declared before the buttons so the buttons win the touch. -->
     <div id="aim-zone"></div>
-    <div id="aim-stick" class="hidden"><div id="aim-knob"></div></div>
+    <div id="aim-stick" class="hidden"><div id="aim-dir"></div><div id="aim-knob"></div></div>
     <div id="aim-hint"><span>AIM</span></div>
 
     <div id="btn-fire" class="tbtn"><span>FIRE</span></div>
@@ -199,8 +199,8 @@
 <script src="js/input.js"></script>
 <script src="js/platform.js"></script>
 <script src="vendor/three.min.js"></script>
-<script src="js/render3d.js?v=11"></script>
-<script src="js/game.js?v=11"></script>
+<script src="js/render3d.js?v=12"></script>
+<script src="js/game.js?v=12"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {

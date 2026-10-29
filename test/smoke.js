@@ -659,6 +659,102 @@ check('aim: manual and assisted aim look different', `
 })()
 `, v => v === true);
 
+console.log('--- aim indicator ---');
+run(`
+Game.startRun();
+Game.pillars = [];
+Input.keys = Object.create(null);
+Input.resetAim();
+Game.enemies.length = 0; Game.portals.length = 0; Game.spawnQueue.length = 0;
+Game.player.angle = 0; Game.player.turret = 0;
+`);
+
+check('aim indicator: no hit when the ray is empty', `
+Game.enemies.length = 0;
+armRayHit(Game.player, 0, 250) === null
+`, v => v === true);
+
+check('aim indicator: detects a body in the ray', `
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x + 160, Game.player.y);
+var h = armRayHit(Game.player, 0, 250);
+Game.enemies.length = 0;
+h !== null && h.dist > 0 && h.dist < 250
+`, v => v === true);
+
+check('aim indicator: ignores bodies behind the car', `
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x - 160, Game.player.y);
+var h = armRayHit(Game.player, 0, 250);
+Game.enemies.length = 0;
+h === null
+`, v => v === true);
+
+check('aim indicator: ignores bodies outside the ray', `
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x + 160, Game.player.y + 200);
+var h = armRayHit(Game.player, 0, 250);
+Game.enemies.length = 0;
+h === null
+`, v => v === true);
+
+check('aim indicator: picks the nearest body on the ray', `
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x + 220, Game.player.y);
+Game.spawnEnemy('gunner', Game.player.x + 120, Game.player.y);
+var h = armRayHit(Game.player, 0, 400);
+Game.enemies.length = 0;
+h !== null && h.dist < 160
+`, v => v === true);
+
+check('aim indicator: the shot distance is used, not a fixed length', `
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x + 150, Game.player.y);
+var near = armRayHit(Game.player, 0, 400);
+Game.enemies.length = 0;
+Game.spawnEnemy('brute', Game.player.x + 320, Game.player.y);
+var far = armRayHit(Game.player, 0, 400);
+Game.enemies.length = 0;
+near && far && far.dist > near.dist
+`, v => v === true);
+
+check('aim indicator: gold when the shot will land, coloured when not', `
+(function () {
+  var cols = [];
+  var orig = ctx.stroke;
+  ctx.stroke = function () { cols.push(ctx.strokeStyle); return orig.apply(ctx, arguments); };
+  Game.enemies.length = 0;
+  Game.aimManual = true;
+  drawAim(Game.player, 1.0);
+  var miss = cols.slice();
+  cols.length = 0;
+  Game.spawnEnemy('brute', Game.player.x + 150, Game.player.y);
+  Game.player.turret = 0;
+  drawAim(Game.player, 1.0);
+  var hit = cols.slice();
+  ctx.stroke = orig;
+  Game.enemies.length = 0;
+  var GOLD = '#ffd24d';
+  return miss.indexOf(GOLD) < 0 && hit.indexOf(GOLD) >= 0;
+})()
+`, v => v === true);
+
+check('aim indicator: the pad flashes lock-on', `
+(function () {
+  Input.resetAim();
+  Input.aim.active = true; Input.aim.moved = true; Input.aim.angle = 0;
+  Game.aimManual = true;
+  Game.enemies.length = 0;
+  Game.spawnEnemy('brute', Game.player.x + 150, Game.player.y);
+  Game.player.turret = 0;
+  drawAim(Game.player, 1.0);
+  var on = Input._aimLocked === true;
+  Input.resetAim();
+  Game.enemies.length = 0;
+  return on && Input._aimLocked === false;
+})()
+`, v => v === true);
+
 console.log('--- pause flow ---');
 run('Game.togglePause();');
 check('paused', 'Game.state', s => s === 'paused');

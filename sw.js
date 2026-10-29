@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v11';  // v11: touch aiming (aim pad + smarter assist)
+const VERSION = 'nw-v12';  // v12: clearer aim indicator
 const CORE = [
   './',
   './index.html',

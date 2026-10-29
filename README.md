@@ -184,10 +184,26 @@ Now it is a twin-stick layout:
   whatever is beside or behind the car. A generous range (760 px) replaces the
   old narrow forward cone.
 
-The turret is always visible: a marching dashed sight line plus a reticle run
-along the barrel. It is **pink while you aim manually** and **cyan when the
-assist is driving it**, and the assisted target gets yellow lock brackets — so
-"the gun is stuck" and "the gun has nothing to shoot" can never look the same.
+The turret is always readable, and the indicator now reports three states
+instead of two:
+
+| Colour | Meaning |
+| --- | --- |
+| **Cyan** | the assist is steering, nothing in the way |
+| **Pink** | you are steering, ray into empty space |
+| **Gold** | the ray crosses a hostile — the shot will land |
+
+Gold is a real test, not a decoration: `armRayHit()` casts the turret ray against
+every body and shortens the line to the actual impact distance, so the reticle
+sits where the bullet will meet the car. The line is 250 px long, drawn over a
+dark outline pass so it cannot dissolve into a bright neon body, carries a
+white marching highlight for direction, and ends in a spinning reticle with
+corner ticks. A confirmed target gets gold lock brackets plus a slow sweep ring.
+
+The thumb pad mirrors it: a needle inside the pad points where the gun faces, a
+dashed inner ring marks the deadzone, and the whole pad flashes gold on lock-on
+— so the feedback arrives where the player is looking, under their finger,
+not only in the middle of the screen.
 
 ## Android APK
 

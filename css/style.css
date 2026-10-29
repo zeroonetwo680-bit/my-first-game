@@ -669,6 +669,32 @@ canvas#game {
   border: 2px solid rgba(255, 61, 129, 0.95);
   box-shadow: 0 0 18px rgba(255, 61, 129, 0.6);
 }
+/* needle: points where the gun is actually facing, so the thumb position and
+   the firing direction are the same thing on screen */
+#aim-dir {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 3px;
+  margin: -1.5px 0 0 0; transform-origin: 0 50%;
+  background: linear-gradient(90deg, rgba(255,61,129,0.95), rgba(255,61,129,0.25));
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(255, 61, 129, 0.8);
+}
+/* deadzone ring: inside this the pad ignores jitter from a resting thumb */
+#aim-stick::after {
+  content: ''; position: absolute; left: 50%; top: 50%;
+  width: 28px; height: 28px; margin: -14px 0 0 -14px;
+  border-radius: 50%; border: 1px dashed rgba(255, 61, 129, 0.35);
+}
+/* lock-on flash: the pad border goes gold the moment the shot will land */
+#aim-stick.on-target {
+  border-color: rgba(255, 210, 77, 0.95);
+  background: rgba(255, 210, 77, 0.10);
+  box-shadow: 0 0 22px rgba(255, 210, 77, 0.45);
+}
+#aim-stick.on-target #aim-knob {
+  border-color: rgba(255, 210, 77, 1);
+  background: rgba(255, 210, 77, 0.4);
+  box-shadow: 0 0 20px rgba(255, 210, 77, 0.75);
+}
 /* discoverability: a resting ring that shows the pad exists at all */
 #aim-hint {
   position: absolute;
