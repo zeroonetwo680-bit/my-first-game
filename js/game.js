@@ -1667,6 +1667,7 @@ const Game = {
     if (use3d) {
       if (this.state === 'menu') Render3D.showcase();
       else Render3D.render(this);
+      Render3D.diagTick();              // keeps the live 3D readout truthful
       ctx.clearRect(0, 0, vw, vh);
     } else {
       ctx.fillStyle = '#04060f';

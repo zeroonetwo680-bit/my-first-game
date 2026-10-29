@@ -40,10 +40,32 @@ class FakeRenderer {
     this.info={render:{triangles:0,calls:0}};
     this.capabilities={getMaxAnisotropy:()=>4};
     this.toneMapping=0; this.toneMappingExposure=1; }
-  setPixelRatio(){} setSize(){} render(scene,cam){ calls.renders++;
-    calls.lastScene=scene; calls.lastCam=cam;
-    let n=0; scene.traverse(o=>{ if(o.isMesh && o.visible) n += (o.geometry&&o.geometry.index?o.geometry.index.count:999)/3; });
-    this.info.render.triangles=Math.round(n); }
+  setPixelRatio(){} setSize(){}
+  getContext(){ return { isContextLost: () => false }; }
+  render(scene,cam){ calls.renders++; calls.lastScene=scene; calls.lastCam=cam;
+
+    /* Do exactly what three.js does before it counts a triangle: build the
+       frustum from projectionMatrix * matrixWorldInverse, then cull. Without
+       this the fake renderer happily "draws" geometry that the real one throws
+       away, which is why a 0-triangle browser looked healthy in the harness. */
+    /* three.js does this first in render(): */
+    scene.updateMatrixWorld();
+    cam.updateMatrixWorld();
+    const pr = new THREE.Matrix4();
+    pr.multiplyMatrices(cam.projectionMatrix, cam.matrixWorldInverse);
+    const frustum = new THREE.Frustum();
+    frustum.setFromProjectionMatrix(pr);
+
+    let drawn = 0, culled = 0, skipped = 0;
+    scene.traverse(o => {
+      if (!o.isMesh) return;
+      if (!o.visible) { skipped++; return; }
+      if (o.frustumCulled === false || frustum.intersectsObject(o)) {
+        drawn += (o.geometry && o.geometry.index) ? o.geometry.index.count / 3 : 1;
+      } else { culled++; }
+    });
+    calls.culled = culled; calls.skipped = skipped;
+    this.info.render.triangles = Math.round(drawn); }
 }
 THREE.WebGLRenderer = FakeRenderer;
 
@@ -70,7 +92,9 @@ console.log('camera near/far     :', cam ? cam.near.toFixed(1)+'/'+cam.far.toFix
 let visibleCars=0, totalMeshes=0, visibleMeshes=0;
 sc.traverse(o=>{ if(o.isMesh){ totalMeshes++; if(o.visible) visibleMeshes++; } if(o.isGroup && o.userData && o.children.length>=4) visibleCars++; });
 console.log('meshes total/visible:', totalMeshes+'/'+visibleMeshes);
-console.log('triangles submitted :', R3.renderer.info.render.triangles);
+console.log('triangles submitted :', R3.renderer.info.render.triangles, '(culled:', calls.culled, 'hidden:', calls.skipped + ')');
+console.log('projection NaN?     :', cam ? cam.projectionMatrix.elements.some(function(v){return !isFinite(v);}) : 'no cam');
+console.log('camera matrixWorld  :', cam ? cam.matrixWorld.elements.map(function(v){return isFinite(v)?1:0;}).join('') : '');
 
 /* project the player car through the camera */
 const p = vm.runInContext('({x:Game.player.x,y:Game.player.y})', sb);

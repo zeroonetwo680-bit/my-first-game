@@ -241,6 +241,42 @@ console.log('\n--- dead-frame self check ---');
   Render3D.renderer = null;
 })();
 
+/* -------- a dead WebGL context must fall back, never fake a render -------- */
+console.log('\n--- lost context ---');
+(() => {
+  Render3D.ready = true;
+  Render3D.enabled = true;
+
+  /* three.js returns silently from render() when the context is gone, so the
+     only symptom is "0 triangles and a black screen". Detect the cause. */
+  Render3D.renderer = {
+    getContext: () => ({ isContextLost: () => true }),
+    info: { render: { triangles: 0 } }
+  };
+  Render3D._selfCheck();
+  ok('a lost context disables the layer on the first frame', Render3D.enabled === false && Render3D._contextLost === true);
+
+  /* and the 2D canvas gets its own background back */
+  Render3D.ready = true;
+  Render3D._contextLost = false;
+  Render3D.renderer = { getContext: () => ({ isContextLost: () => false }), info: { render: { triangles: 0 } } };
+  Render3D.enabled = true;
+  Render3D.setEnabled(true, null);
+  const cleared = sandbox.document.getElementById('game').style.background === 'transparent';
+  for (let i = 0; i < 25; i++) Render3D._selfCheck();
+  const restored = sandbox.document.getElementById('game').style.background === '';
+  ok('a live context that draws nothing recovers within ~0.3s', Render3D.enabled === false && cleared && restored);
+
+  /* a healthy layer is never touched */
+  Render3D.enabled = true;
+  Render3D.ready = true;
+  Render3D.renderer = { getContext: () => ({ isContextLost: () => false }), info: { render: { triangles: 2400 } } };
+  for (let i = 0; i < 60; i++) Render3D._selfCheck();
+  ok('a healthy layer keeps running', Render3D.enabled === true && Render3D._lastTris === 2400);
+  Render3D.renderer = null;
+  Render3D.enabled = false;
+})();
+
 /* ---------------- the player marker ---------------- */
 (() => {
   const p = { x: 700, y: 900, dead: false, angle: 0 };

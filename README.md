@@ -65,6 +65,32 @@ triangles submitted: 2434 | player NDC 0.000 0.000 0.972 -> screen (640, 360)
 If that says 2434 triangles while the screen is black, the bug is layering, not
 graphics. The HUD badge shows the same number live (`3D · 2434t`).
 
+### Why the scene submitted 0 triangles
+
+The build was verified to populate 47 meshes and, with real frustum culling,
+submit 2434 triangles per frame. A player still saw `3D · 0t`. The cause is a
+silent early return inside three.js:
+
+```js
+// WebGLRenderer.render()
+if ( _isContextLost === true ) return;
+```
+
+A lost WebGL context (weak GPU, too many live contexts, a sandboxed iframe)
+makes `render()` do nothing at all — no exception, no draw calls — while the
+game still believed the 3D layer was active and had already cleared the 2D
+canvas. Result: a black screen with only the FX drawn on top.
+
+Fixed by treating a dead context as a first-class state:
+
+* the `webglcontextlost` listener is attached **before** the renderer is created,
+* the context is probed immediately after creation (`gl.isContextLost()`),
+* it is probed again on every frame, which is the cheapest liveness test there is,
+* `frustumCulled` is disabled for the arena (a few dozen meshes — culling can
+  only ever lose the whole scene),
+* `render()` no longer bails out silently when the scene is missing,
+* every one of those paths switches to the 2D renderer within ~0.3 s.
+
 ### Cache, the bug that hides bugs
 
 The service worker used to be **cache-first for everything**, which meant a fixed

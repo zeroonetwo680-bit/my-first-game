@@ -50,6 +50,8 @@ const Render3D = {
   _force: false,          // test seam: pretend a renderer exists
   _deadFrames: 0,
   _lastTris: 0,
+  _lastMeshes: 0,
+  _contextLost: false,
   _ring: null,
   _t: 0,
   _dpr: 1,
@@ -96,8 +98,32 @@ const Render3D = {
       }
       const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.cfg.dprCap);
       this._dpr = dpr;
+
+      /* Listen for context loss BEFORE the context exists. A GPU can lose the
+         context the instant it is created (weak mobile GPU, too many live
+         contexts, a sandboxed iframe). When that happens three.js' render()
+         returns silently - no exception, no drawing - while the layer still
+         reports itself active and the 2D canvas has already been cleared. That
+         is a black screen with only the FX visible. */
+      const onLost = (e) => {
+        if (e && e.preventDefault) e.preventDefault();
+        this._contextLost = true;
+        this.ready = false;
+        this.enabled = false;
+        try {
+          if (glCanvas.style) glCanvas.style.display = 'none';
+          const g2 = document.getElementById('game');
+          if (g2 && g2.style) g2.style.background = '';
+          if (document.body && document.body.classList) document.body.classList.remove('has3d');
+          if (typeof sync3dButton === 'function') sync3dButton();
+        } catch (err) {}
+        try { console.warn('[Render3D] WebGL context lost - using the 2D renderer'); } catch (err) {}
+      };
+      if (glCanvas.addEventListener) glCanvas.addEventListener('webglcontextlost', onLost, false);
+
       const renderer = new THREE.WebGLRenderer({
-        canvas: glCanvas, antialias: true, alpha: false, powerPreference: 'high-performance'
+        canvas: glCanvas, antialias: true, alpha: false,
+        powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false
       });
       renderer.setPixelRatio(dpr);
       renderer.shadowMap.enabled = true;
@@ -108,19 +134,17 @@ const Render3D = {
       /* A lost context (driver reset, GPU pressure, tab backgrounded too long)
          would otherwise leave a permanently black canvas. Drop back to the 2D
          renderer instead of pretending to draw. */
-      const onLost = (e) => {
-        e.preventDefault();
+      /* The context can already be dead by the time the constructor returns.
+         three.js would then render nothing at all, forever, without a word. */
+      const ctx0 = renderer.getContext && renderer.getContext();
+      if (!ctx0 || (ctx0.isContextLost && ctx0.isContextLost())) {
+        try { console.warn('[Render3D] the WebGL context was lost at creation'); } catch (err) {}
+        this._contextLost = true;
         this.ready = false;
         this.enabled = false;
-        if (glCanvas.style) glCanvas.style.display = 'none';
-        try {
-          if (typeof document !== 'undefined' && document.body && document.body.classList) {
-            document.body.classList.remove('has3d');
-          }
-          if (typeof sync3dButton === 'function') sync3dButton();
-        } catch (err) {}
-      };
-      glCanvas.addEventListener('webglcontextlost', onLost, false);
+        try { if (glCanvas.style) glCanvas.style.display = 'none'; } catch (err) {}
+        return false;
+      }
 
       this.renderer = renderer;
       this.canvas = glCanvas;
@@ -352,6 +376,7 @@ const Render3D = {
 
     S.add(group);
     this.world = { group };
+    this._harden();
   },
 
   /* 512x512 tileable neon deck texture */
@@ -529,6 +554,14 @@ const Render3D = {
     return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
   },
 
+  /* The arena is tiny (a few dozen meshes), so culling buys nothing and can
+     only ever lose the whole scene if a bounding sphere or the camera basis is
+     off. Turn it off for everything we own. */
+  _harden() {
+    if (!this.scene) return;
+    this.scene.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
+  },
+
   _meshFor(ent, spec) {
     let g = this._meshes ? this._meshes.get(ent) : null;
     if (!g) {
@@ -537,6 +570,7 @@ const Render3D = {
       this.scene.add(g);
       if (!this._allCars) this._allCars = [];
       this._allCars.push(g);
+      g.traverse((o) => { if (o.isMesh) o.frustumCulled = false; });
     }
     return g;
   },
@@ -612,7 +646,22 @@ const Render3D = {
 
   render(game) {
     if (!this.active() || !game) return false;
-    if (!this.scene || !this.camera || !this.renderer) return false;   // scene not built yet
+
+    /* Never bail out silently. A missing scene used to mean "return false,
+       draw nothing, let the 2D pass be skipped" - another invisible failure. */
+    if (!this.scene || !this.camera || !this.renderer) {
+      this._noScene = (this._noScene || 0) + 1;
+      if (this._noScene === 1) {
+        try { console.warn('[Render3D] render() called with no scene; falling back to 2D'); } catch (e) {}
+      }
+      if (this._noScene > 10) {
+        this._noScene = 0;
+        this.setEnabled(false, null);
+        try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
+      }
+      return false;
+    }
+    this._noScene = 0;
     const dt = 1 / 60;
     this._t += dt;
 
@@ -623,6 +672,11 @@ const Render3D = {
     }
 
     this._seen.length = 0;
+
+    /* Safety net: if no arena exists yet (a reset that ran before the layer was
+       ready, a toggled state, a rebuilt world), build it here rather than
+       rendering an empty void. */
+    if (!this.world && game.pillars && game.pillars.length) this.buildWorld(game);
 
     /* enemies */
     if (game.enemies) {
@@ -672,18 +726,61 @@ const Render3D = {
   /* Watches what the GPU actually submitted. If the scene renders nothing at
      all for most of a second, the layer is useless, so drop back to the 2D
      renderer instead of leaving the player looking at a black screen. */
+  /* Keeps the readout honest even on frames where render() bailed out. */
+  diagTick() {
+    this._diagTick = (this._diagTick || 0) + 1;
+    if (this._diagTick % 10 !== 0) return;
+    this._lastMeshes = this._meshCount();
+    this._updateBadge();
+  },
+
+  _meshCount() {
+    let n = 0;
+    if (this.scene) this.scene.traverse((o) => { if (o.isMesh) n++; });
+    return n;
+  },
+
   _selfCheck() {
     if (!this.renderer || !this.renderer.info) return;
+
+    /* The cheapest, most reliable liveness test there is: ask the context.
+       A lost context makes three.js skip every draw call without throwing. */
+    const ctx = this.renderer.getContext && this.renderer.getContext();
+    if (ctx && ctx.isContextLost && ctx.isContextLost()) {
+      if (!this._force) {
+        this._contextLost = true;
+        try { console.warn('[Render3D] WebGL context is lost; switching to the 2D renderer'); } catch (e) {}
+        this.setEnabled(false, null);
+        try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
+      }
+      return;
+    }
+
     const tris = this.renderer.info.render.triangles;
     this._lastTris = tris;
+    this._lastMeshes = this._meshCount();
     this._badgeTick = (this._badgeTick || 0) + 1;
-    if (this._badgeTick % 15 === 0) this._updateBadge();
+    if (this._badgeTick % 8 === 0) this._updateBadge();
     if (this._force) return;
     if (tris > 0) { this._deadFrames = 0; return; }
     this._deadFrames = (this._deadFrames || 0) + 1;
-    if (this._deadFrames > 45) {
+
+    /* Nothing drawn even though the scene is populated: something is rejecting
+       every object. Log the shape of the problem once, so the readout is
+       actionable instead of just "black". */
+    if (this._deadFrames === 8 && this._lastMeshes > 0) {
+      try {
+        console.warn('[Render3D] scene has ' + this._lastMeshes + ' meshes but 0 triangles were drawn',
+          { camera: this.camera && this.camera.position, fov: this.camera && this.camera.fov,
+            near: this.camera && this.camera.near, far: this.camera && this.camera.far,
+            rendererSize: this._vw + 'x' + this._vh });
+      } catch (e) {}
+    }
+
+    /* give up quickly: the player must never be stuck on a dead canvas */
+    if (this._deadFrames > 20) {
       this._deadFrames = 0;
-      try { console.warn('[Render3D] the 3D layer submitted no geometry; falling back to 2D'); } catch (e) {}
+      try { console.warn('[Render3D] no geometry reached the GPU; switching to the 2D renderer'); } catch (e) {}
       this.setEnabled(false, null);
       try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
     }
@@ -699,7 +796,7 @@ const Render3D = {
       if (!b) return;
       const live = this.active();
       b.classList.toggle('live', live);
-      if (live) b.textContent = '3D \u00b7 ' + (this._lastTris || 0) + 't';
+      if (live) b.textContent = '3D ' + (this._lastTris || 0) + 't / ' + (this._lastMeshes || 0) + 'm';
     } catch (e) {}
   },
 
