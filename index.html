@@ -39,7 +39,7 @@
   } catch (e) {}
 })();
 </script>
-<link rel="stylesheet" href="css/style.css?v=10">
+<link rel="stylesheet" href="css/style.css?v=11">
 </head>
 <body>
 <div id="app">
@@ -82,6 +82,14 @@
   <div id="touch-ui" class="hidden">
     <div id="stick-zone"></div>
     <div id="stick" class="hidden"><div id="stick-knob"></div></div>
+
+    <!-- AIM: the right half of the screen is an aim pad. Drag from anywhere on
+         it and the gun follows the drag direction; the gun also fires while you
+         hold it. Declared before the buttons so the buttons win the touch. -->
+    <div id="aim-zone"></div>
+    <div id="aim-stick" class="hidden"><div id="aim-knob"></div></div>
+    <div id="aim-hint"><span>AIM</span></div>
+
     <div id="btn-fire" class="tbtn"><span>FIRE</span></div>
     <div id="btn-rocket" class="tbtn small"><span>RKT</span></div>
     <div id="btn-boost" class="tbtn small"><span>NOS</span></div>
@@ -190,8 +198,8 @@
 <script src="js/input.js"></script>
 <script src="js/platform.js"></script>
 <script src="vendor/three.min.js"></script>
-<script src="js/render3d.js?v=10"></script>
-<script src="js/game.js?v=10"></script>
+<script src="js/render3d.js?v=11"></script>
+<script src="js/game.js?v=11"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {

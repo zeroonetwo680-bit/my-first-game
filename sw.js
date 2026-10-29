@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v10';  // v10: single-canvas 3D compositing
+const VERSION = 'nw-v11';  // v11: touch aiming (aim pad + smarter assist)
 const CORE = [
   './',
   './index.html',

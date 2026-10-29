@@ -652,28 +652,43 @@ const Game = {
     }
 
     // ----- turret / aim -----
+    // Priority: the player's own input always wins, auto-aim is only a fallback.
     let desired = p.angle;
+    this.aimTarget = null;
+    this.aimManual = false;
     const padAim = Input.padAim();
+    const touchAim = Input.aimAngle();
     if (padAim !== null) {
       desired = padAim;
+    } else if (touchAim !== null) {
+      // twin-stick: the aim pad points the gun wherever the thumb drags
+      desired = touchAim;
+      this.aimManual = true;
     } else if (Input.mouseAiming() && !IS_TOUCH_ONLY) {
       const wx = this.cam.x + (Input.mouse.x - vw / 2) / this.cam.zoom;
       const wy = this.cam.y + (Input.mouse.y - vh / 2) / this.cam.zoom;
       desired = Math.atan2(wy - p.y, wx - p.x);
+      this.aimManual = true;
     } else {
-      // auto-aim: nearest hostile inside a generous forward cone
-      let found = false, bestD = 640 * 640;
+      /* Assist: score every hostile in range by distance plus how far the
+         turret has to swing. A plain forward-only cone used to leave the gun
+         pointing straight ahead even with an enemy right beside the car, which
+         is what made touch aiming feel stuck. */
+      let bestScore = Infinity, bestA = null, bestE = null;
       for (const e of this.enemies) {
         const d2v = dist2(p.x, p.y, e.x, e.y);
-        if (d2v > bestD) continue;
+        if (d2v > 760 * 760) continue;
         const a = Math.atan2(e.y - p.y, e.x - p.x);
-        if (Math.abs(angDiff(p.angle, a)) < 1.35) {
-          bestD = d2v;
-          desired = a;
-          found = true;
-        }
+        const off = Math.abs(angDiff(p.angle, a));
+        const score = Math.sqrt(d2v) + off * 210;
+        if (score < bestScore) { bestScore = score; bestA = a; bestE = e; }
       }
-      if (!found) desired = p.angle;
+      if (bestA !== null) {
+        desired = bestA;
+        this.aimTarget = bestE;
+      } else {
+        desired = p.angle;
+      }
     }
     p.turret += angDiff(p.turret, desired) * Math.min(1, 20 * dt);
 
@@ -684,7 +699,7 @@ const Game = {
 
     // ----- fire -----
     p.fireCd -= dt;
-    if (Input.getFire() && p.fireCd <= 0) {
+    if ((Input.getFire() || Input.aimFiring()) && p.fireCd <= 0) {
       const nx = p.x + Math.cos(p.angle) * 24;
       const ny = p.y + Math.sin(p.angle) * 24;
       if (p.weapon === 'shotgun') {
@@ -1758,6 +1773,7 @@ const Game = {
           ctx.globalAlpha = 1;
         }
       }
+      drawAim(p, t);
     }
 
     // additive pass
@@ -2225,6 +2241,65 @@ function damagePlayer(d, sx, sy) {
   }
 }
 
+  /* Aim readout: a marching dashed sight line along the turret plus a reticle,
+     so the player can always see where the gun is pointing. It is the single
+     clearest piece of feedback for touch aiming - without it "the gun is stuck
+     forward" and "the gun is aiming at nothing" look exactly the same. */
+function drawAim(p, t) {
+    const manual = !!Game.aimManual;
+    const target = Game.aimTarget;
+    const len = 150 + (p.boost ? 26 : 0);
+    const col = manual ? '#ff3d81' : '#35f0ff';
+
+    const nx = p.x + Math.cos(p.turret) * 26;
+    const ny = p.y + Math.sin(p.turret) * 26;
+    const ex = p.x + Math.cos(p.turret) * len;
+    const ey = p.y + Math.sin(p.turret) * len;
+
+    ctx.save();
+    ctx.globalAlpha = manual ? 0.75 : 0.42;
+    ctx.strokeStyle = col;
+    ctx.lineWidth = manual ? 2.2 : 1.6;
+    if (ctx.setLineDash) ctx.setLineDash([9, 9]);
+    if (ctx.lineDashOffset !== undefined) ctx.lineDashOffset = -((t * 60) % 18);
+    ctx.beginPath();
+    ctx.moveTo(nx, ny);
+    ctx.lineTo(ex, ey);
+    ctx.stroke();
+    if (ctx.setLineDash) ctx.setLineDash([]);
+
+    ctx.globalAlpha = manual ? 0.95 : 0.6;
+    ctx.beginPath();
+    ctx.arc(ex, ey, 9, 0, TAU);
+    ctx.stroke();
+    ctx.beginPath();
+    for (let i = 0; i < 4; i++) {
+      const a = p.turret + Math.PI / 2 + i * Math.PI / 2;
+      ctx.moveTo(ex + Math.cos(a) * 6, ey + Math.sin(a) * 6);
+      ctx.lineTo(ex + Math.cos(a) * 14, ey + Math.sin(a) * 14);
+    }
+    ctx.stroke();
+    ctx.restore();
+
+    /* lock brackets on whatever the assist picked, so auto-aim is visible */
+    if (target && !target.dead) {
+      ctx.save();
+      ctx.globalAlpha = 0.55 + 0.35 * Math.sin(t * 8);
+      ctx.strokeStyle = '#ffd24d';
+      ctx.lineWidth = 2;
+      const r = target.r + 11, s2 = 6;
+      for (let i = 0; i < 4; i++) {
+        const sx = i % 2 ? 1 : -1, sy = i < 2 ? -1 : 1;
+        ctx.beginPath();
+        ctx.moveTo(target.x + sx * r - sx * s2, target.y + sy * r);
+        ctx.lineTo(target.x + sx * r, target.y + sy * r);
+        ctx.lineTo(target.x + sx * r, target.y + sy * r - sy * s2);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
+}
+
 /* ============================================================
    Drawing helpers
    ============================================================ */
@@ -2413,7 +2488,7 @@ function wireUI() {
   // controls hint
   const hint = document.getElementById('controls-hint');
   if (IS_TOUCH) {
-    hint.innerHTML = 'LEFT SIDE &mdash; drag to drive &bull; <b>FIRE</b> / <b>NOS</b> / <b>RKT</b> buttons &bull; <b>SWP</b> swaps weapons (when unlocked) &bull; auto-aim assist ON';
+    hint.innerHTML = '<b>LEFT</b> half &mdash; drag to drive &bull; <b>RIGHT</b> half &mdash; drag to <b>AIM</b> and fire in that direction &bull; <b>NOS</b> / <b>RKT</b> / <b>FIRE</b> buttons &bull; <b>SWP</b> swaps weapons &bull; let go and auto-aim picks the nearest hostile (cyan sight line)';
   } else {
     hint.innerHTML = '<span class="key">GAMEPAD</span> supported \u2022 <span class="key">W A S D</span> drive &bull; <span class="key">SPACE</span>/<span class="key">CLICK</span> fire &bull; <span class="key">SHIFT</span> nitro &bull; <span class="key">E</span> rocket &bull; <span class="key">Q</span>/right-click swap weapon &bull; <span class="key">P</span> pause &bull; mouse aims the gun';
   }

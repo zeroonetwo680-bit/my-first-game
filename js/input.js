@@ -12,6 +12,10 @@ const Input = {
 
   // touch joystick
   stick: { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0 },
+  /* touch aim pad (right half of the screen). angle is the absolute direction
+     the player is aiming in; moved stays false until the drag leaves the
+     deadzone so a stray tap does not yank the turret around. */
+  aim: { active: false, id: -1, ox: 0, oy: 0, dx: 0, dy: 0, angle: 0, mag: 0, moved: false },
   touch: { fire: false, boost: false, rocketPressed: false },
   swapPressed: false,
   padState: null,
@@ -28,6 +32,9 @@ const Input = {
     this.el.stickZone = document.getElementById('stick-zone');
     this.el.stick = document.getElementById('stick');
     this.el.knob = document.getElementById('stick-knob');
+    this.el.aimStick = document.getElementById('aim-stick');
+    this.el.aimKnob = document.getElementById('aim-knob');
+    this.el.aimHint = document.getElementById('aim-hint');
 
     /* ---------------- keyboard ---------------- */
     window.addEventListener('keydown', (e) => {
@@ -102,6 +109,58 @@ const Input = {
     };
     zone.addEventListener('pointerup', endStick);
     zone.addEventListener('pointercancel', endStick);
+
+    /* ---------------- touch aim pad (right zone) ---------------- */
+    const aimZone = document.getElementById('aim-zone');
+    if (aimZone) {
+      const AIM_R = 70, AIM_DEAD = 9;
+      aimZone.addEventListener('pointerdown', (e) => {
+        if (e.pointerType !== 'touch' && e.pointerType !== 'pen') return;
+        this.touchUsed = true;
+        if (this.aim.active) return;
+        this.aim.active = true;
+        this.aim.id = e.pointerId;
+        this.aim.ox = e.clientX;
+        this.aim.oy = e.clientY;
+        this.aim.dx = 0; this.aim.dy = 0; this.aim.mag = 0; this.aim.moved = false;
+        if (this.el.aimStick) {
+          this.el.aimStick.style.left = e.clientX + 'px';
+          this.el.aimStick.style.top = e.clientY + 'px';
+          this.el.aimStick.classList.remove('hidden');
+        }
+        if (this.el.aimKnob) this.el.aimKnob.style.transform = '';
+        if (this.el.aimHint) this.el.aimHint.classList.add('hidden');
+        e.preventDefault();
+      });
+      aimZone.addEventListener('pointermove', (e) => {
+        if (!this.aim.active || e.pointerId !== this.aim.id) return;
+        let dx = e.clientX - this.aim.ox;
+        let dy = e.clientY - this.aim.oy;
+        const m = Math.hypot(dx, dy);
+        if (m > AIM_R) { dx = dx / m * AIM_R; dy = dy / m * AIM_R; }
+        this.aim.dx = dx / AIM_R;
+        this.aim.dy = dy / AIM_R;
+        this.aim.mag = m;
+        if (m > AIM_DEAD) {
+          this.aim.angle = Math.atan2(dy, dx);
+          this.aim.moved = true;
+        }
+        if (this.el.aimKnob) this.el.aimKnob.style.transform = 'translate(' + dx + 'px,' + dy + 'px)';
+        e.preventDefault();
+      });
+      const endAim = (e) => {
+        if (e.pointerId !== this.aim.id) return;
+        this.aim.active = false;
+        this.aim.id = -1;
+        this.aim.dx = 0; this.aim.dy = 0; this.aim.mag = 0; this.aim.moved = false;
+        if (this.el.aimStick) this.el.aimStick.classList.add('hidden');
+        if (this.el.aimKnob) this.el.aimKnob.style.transform = '';
+        if (this.el.aimHint) this.el.aimHint.classList.remove('hidden');
+      };
+      aimZone.addEventListener('pointerup', endAim);
+      aimZone.addEventListener('pointercancel', endAim);
+      aimZone.addEventListener('pointerleave', endAim);
+    }
 
     /* ---------------- touch action buttons ---------------- */
     this.bindBtn('btn-fire', 'fire');
@@ -244,6 +303,29 @@ const Input = {
   },
 
   /** right-stick aim override, null when idle */
+  resetAim() {
+    this.aim.active = false;
+    this.aim.id = -1;
+    this.aim.dx = 0; this.aim.dy = 0; this.aim.mag = 0; this.aim.moved = false;
+    if (this.el.aimStick) this.el.aimStick.classList.add('hidden');
+    if (this.el.aimKnob) this.el.aimKnob.style.transform = '';
+  },
+
+  /* ---- touch aim ---- */
+  aimAiming() {
+    return !!(this.aim.active && this.aim.moved);
+  },
+
+  /* absolute aim direction in radians, or null when the pad is not in use */
+  aimAngle() {
+    return this.aimAiming() ? this.aim.angle : null;
+  },
+
+  /* holding the aim pad fires too: two thumbs cannot also reach FIRE */
+  aimFiring() {
+    return this.aimAiming();
+  },
+
   padAim() {
     if (this.padState && (this.padState.aimX || this.padState.aimY)) {
       return Math.atan2(this.padState.aimY, this.padState.aimX);
@@ -259,5 +341,6 @@ const Input = {
 
   showTouchUI(show) {
     document.getElementById('touch-ui').classList.toggle('hidden', !show);
+    if (!show) this.resetAim();
   }
 };

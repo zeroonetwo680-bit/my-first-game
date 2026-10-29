@@ -166,11 +166,35 @@ python3 -m http.server 8000
 # → http://localhost:8000
 ```
 
+## Aiming on touch
+
+Touch aiming used to be passive: the turret followed the car's heading and a
+forward-only auto-aim cone did the rest, so with anything beside or behind you
+the gun simply pointed forward. That is what made it feel stuck on Android.
+
+Now it is a twin-stick layout:
+
+* **Left half** — drag to drive (unchanged).
+* **Right half** — the aim pad. Drag from wherever your thumb lands and the
+  turret follows the drag direction; the gun **fires while you hold it**, so two
+  thumbs are enough. A resting dashed ring shows the pad is there until you use
+  it, and the stick artwork follows your thumb.
+* **Let go** — auto-aim takes over. The assist now scores every hostile in range
+  by distance *and* by how far the turret has to swing, so it no longer ignores
+  whatever is beside or behind the car. A generous range (760 px) replaces the
+  old narrow forward cone.
+
+The turret is always visible: a marching dashed sight line plus a reticle run
+along the barrel. It is **pink while you aim manually** and **cyan when the
+assist is driving it**, and the assisted target gets yellow lock brackets — so
+"the gun is stuck" and "the gun has nothing to shoot" can never look the same.
+
 ## Controls
 
 | Action | Keyboard / Mouse | Touch |
 |---|---|---|
-| Drive | `WASD` / Arrow keys | Drag anywhere on the left half |
+| Drive | `WASD` / Arrow keys | Drag on the **left** half |
+| Aim | mouse position | Drag on the **right** half (gun follows the drag and fires) |
 | Fire | `Space` or hold **left mouse** (mouse aims the gun) | `FIRE` button (auto-aim assist) |
 | Nitro boost | `Shift` | `NOS` button |
 | Homing rocket | `E` | `RKT` button |

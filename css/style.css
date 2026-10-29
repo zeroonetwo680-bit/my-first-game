@@ -643,3 +643,53 @@ canvas#game {
   .car-card:hover, .btn:hover, .diff-btn:hover { transform: none; }
   .car-stats .fill, .stat-fill { transition: none; }
 }
+
+
+/* ============================================================
+   Touch aiming (twin-stick)
+   The right half of the screen is an aim pad: drag from wherever your thumb
+   lands and the turret follows the drag direction, firing while held. It is
+   declared before the action buttons in the DOM, so the buttons still win
+   touches that land on them.
+   ============================================================ */
+#aim-zone {
+  position: absolute; right: 0; top: 0; left: 48%; bottom: 0;
+  pointer-events: auto; touch-action: none;
+}
+#aim-stick {
+  position: absolute; width: 116px; height: 116px; margin: -58px 0 0 -58px;
+  border: 2px dashed rgba(255, 61, 129, 0.55); border-radius: 50%;
+  background: rgba(255, 61, 129, 0.07);
+  pointer-events: none; z-index: 3;
+  transition: opacity 0.12s ease;
+}
+#aim-knob {
+  position: absolute; left: 50%; top: 50%; width: 46px; height: 46px; margin: -23px 0 0 -23px;
+  border-radius: 50%; background: rgba(255, 61, 129, 0.35);
+  border: 2px solid rgba(255, 61, 129, 0.95);
+  box-shadow: 0 0 18px rgba(255, 61, 129, 0.6);
+}
+/* discoverability: a resting ring that shows the pad exists at all */
+#aim-hint {
+  position: absolute;
+  right: calc(46px + env(safe-area-inset-right));
+  top: 50%; transform: translateY(-50%);
+  width: 96px; height: 96px; border-radius: 50%;
+  border: 2px dashed rgba(255, 61, 129, 0.35);
+  background: radial-gradient(circle, rgba(255,61,129,0.10), transparent 70%);
+  display: flex; align-items: center; justify-content: center;
+  pointer-events: none; z-index: 2;
+  animation: aimPulse 2.6s ease-in-out infinite;
+}
+#aim-hint span {
+  font: 700 11px/1 var(--hud-font); letter-spacing: 3px;
+  color: rgba(255, 140, 180, 0.85); text-shadow: 0 0 10px rgba(255, 61, 129, 0.6);
+}
+#aim-hint.hidden { display: none; }
+@keyframes aimPulse {
+  0%, 100% { opacity: 0.55; transform: translateY(-50%) scale(1); }
+  50% { opacity: 0.9; transform: translateY(-50%) scale(1.05); }
+}
+/* the action buttons sit above the aim pad so they stay tappable */
+#touch-ui .tbtn { z-index: 4; }
+@media (prefers-reduced-motion: reduce) { #aim-hint { animation: none; } }

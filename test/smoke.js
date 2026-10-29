@@ -344,10 +344,13 @@ run(`
 Game.startRun();
 Input.keys = Object.create(null);
 const np = Game.player;
+Game.pillars = [];                       // isolate the sniper AI from pillar geometry
 Game.spawnEnemy('sniper', np.x + 600, np.y);
 this.__sniperLaser = false;
 this.__sniperFired = false;
 for (let i = 0; i < 300 && !this.__sniperFired; i++) {
+  // hold the player's fire so the smarter auto-aim cannot kill it first
+  Input.mouse.down = false; Input.touch.fire = false;
   __frame((68600 + i) * 16.6);
   Input.endFrame();
   const sn = Game.enemies.find(e => e.type === 'sniper');
@@ -357,6 +360,7 @@ for (let i = 0; i < 300 && !this.__sniperFired; i++) {
 `);
 check('sniper shows laser telegraph', 'this.__sniperLaser', v => v === true);
 check('sniper fires high-speed shot', 'this.__sniperFired', v => v === true);
+check('sniper survives long enough to fire', 'this.__sniperHp', v => v === undefined || v > 0);
 check('sniper shot is lethal-grade damage bullet present or player hit', 'Game.player.hp >= 0', v => v === true);
 
 console.log('--- garage: coins, buy, select, per-car stats ---');
@@ -574,6 +578,86 @@ for (let i = 0; i < 600; i++) {
 }
 `);
 check('post-restart playing', 'Game.state', s => s === 'playing');
+
+console.log('--- touch aiming (aim pad + smarter assist) ---');
+run(`
+Game.startRun();
+Game.pillars = [];
+Input.keys = Object.create(null);
+Input.resetAim();
+Game.enemies.length = 0;
+Input.mouse.down = false; Input.touch.fire = false;
+`);
+check('aim: idle pad reports no angle', 'Input.aimAngle()', v => v === null);
+check('aim: idle pad does not fire', 'Input.aimFiring()', v => v === false);
+
+// a drag on the right-side pad must produce an absolute direction
+run(`
+Input.aim.active = true; Input.aim.id = 7;
+Input.aim.dx = 0.8; Input.aim.dy = 0; Input.aim.mag = 56; Input.aim.moved = true;
+Input.aim.angle = Math.atan2(0, 0.8);
+`);
+check('aim: dragging right aims at 0 rad', 'Input.aimAngle()', v => v !== null && Math.abs(v) < 1e-9);
+check('aim: holding the pad fires', 'Input.aimFiring()', v => v === true);
+
+run(`
+Input.aim.angle = Math.atan2(-0.9, 0);
+`);
+check('aim: dragging up aims at -PI/2', 'Input.aimAngle()', v => Math.abs(v + Math.PI / 2) < 1e-9);
+
+// the turret must follow the pad, and it must win over auto-aim
+check('aim: the turret swings to the pad direction', `
+Game.player.turret = 0;
+for (let i = 0; i < 60; i++) Game.update(0.016);
+Math.abs(Game.player.turret + Math.PI / 2) < 0.12
+`, v => v === true);
+
+// a hostile straight behind the car must still be picked up by the assist
+check('aim assist: a target behind the car is acquired', `
+Game.startRun();
+Game.pillars = [];
+Input.keys = Object.create(null);
+Input.resetAim();
+Game.enemies.length = 0; Game.portals.length = 0; Game.spawnQueue.length = 0;
+Game.player.angle = -Math.PI / 2;          // facing "up"
+Game.player.turret = -Math.PI / 2;
+Game.spawnEnemy('rammer', Game.player.x, Game.player.y + 300);  // directly behind
+for (let i = 0; i < 40; i++) Game.update(0.016);
+Math.abs(Game.player.turret - Math.PI / 2) < 0.25
+`, v => v === true);
+
+// and it must expose its pick so the reticle can draw lock brackets
+check('aim assist: the chosen target is published', 'Game.aimTarget', v => v !== null && v !== undefined);
+check('aim pad: released resets cleanly', `
+Input.resetAim();
+Input.aimAngle() === null && Input.aimFiring() === false && Input.aim.moved === false
+`, v => v === true);
+
+// the sight line and the reticle must actually be stroked
+check('aim: the sight line and reticle are painted', `
+(function () {
+  var strokes = 0, orig = ctx.stroke;
+  ctx.stroke = function () { strokes++; return orig.apply(ctx, arguments); };
+  Game.aimManual = true; Game.aimTarget = null;
+  Game.player.turret = 0.7;
+  drawAim(Game.player, 1.0);
+  ctx.stroke = orig;
+  return strokes >= 3;
+})()
+`, v => v === true);
+
+// manual aim is drawn in the aim colour, the assist in the calm one
+check('aim: manual and assisted aim look different', `
+(function () {
+  var cols = [];
+  var orig = ctx.stroke;
+  ctx.stroke = function () { cols.push(ctx.strokeStyle); return orig.apply(ctx, arguments); };
+  Game.aimManual = true; drawAim(Game.player, 1.0);
+  Game.aimManual = false; drawAim(Game.player, 1.0);
+  ctx.stroke = orig;
+  return cols[0] !== cols[cols.length - 1];
+})()
+`, v => v === true);
 
 console.log('--- pause flow ---');
 run('Game.togglePause();');
