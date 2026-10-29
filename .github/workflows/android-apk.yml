@@ -30,7 +30,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          # @capacitor/cli 8 declares engines.node >= 22; on Node 20 `cap init`
+          # dies before it writes capacitor.config.
+          node-version: '22'
 
       - name: Assemble self-contained web bundle
         run: bash scripts/prepare-web.sh
