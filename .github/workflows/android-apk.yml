@@ -7,7 +7,7 @@ on:
       - 'arena/**'
     paths:
       - '.github/workflows/android-apk.yml'
-      - 'scripts/prepare-web.sh'
+      - 'scripts/**'
       - 'index.html'
       - 'css/**'
       - 'js/**'
