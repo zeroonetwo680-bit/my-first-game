@@ -40,4 +40,19 @@ s = s.replace("navigator.serviceWorker.register('./sw.js')", "Promise.reject() &
 p.write_text(s)
 EOF
 
+# ---- stamp the exact commit into the bundle ----
+# The in-game footer then always says which build is installed, so "nothing
+# changed" can be checked instead of argued about.
+SHA="${GITHUB_SHA:-$(git rev-parse HEAD 2>/dev/null || echo unknown)}"
+SHA="${SHA:0:7}"
+python3 - "$SHA" <<'STAMP'
+import pathlib, sys
+stamp = 'build %s' % sys.argv[1]
+p = pathlib.Path('www/index.html')
+s = p.read_text()
+s = s.replace('>build local<', '>' + stamp + '<')
+p.write_text(s)
+print('stamped:', stamp)
+STAMP
+
 echo "www assembled: $(find www -type f | wc -l) files, $(du -sh www | cut -f1)"

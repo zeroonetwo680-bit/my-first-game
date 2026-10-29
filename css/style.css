@@ -693,3 +693,17 @@ canvas#game {
 /* the action buttons sit above the aim pad so they stay tappable */
 #touch-ui .tbtn { z-index: 4; }
 @media (prefers-reduced-motion: reduce) { #aim-hint { animation: none; } }
+
+
+/* Build stamp: the one place that always answers "am I on the new version?".
+   The APK build rewrites this text with its commit SHA, so an old install is
+   obvious at a glance instead of being guessed at from behaviour. */
+#build-stamp {
+  margin-top: 8px;
+  font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace;
+  letter-spacing: 2px;
+  color: rgba(150, 200, 230, 0.55);
+  text-transform: uppercase;
+  user-select: text; -webkit-user-select: text;
+}
+#build-stamp::before { content: '\25CF '; color: #35f0ff; opacity: 0.7; }
