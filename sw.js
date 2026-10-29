@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v6';
+const VERSION = 'nw-v7';   // v7: three.js presentation layer
 const CORE = [
   './',
   './index.html',
@@ -15,6 +15,8 @@ const CORE = [
   './js/achievements.js',
   './js/input.js',
   './js/platform.js',
+  './vendor/three.min.js',
+  './js/render3d.js',
   './js/game.js',
   './assets/icon-192.png',
   './assets/icon-512.png',
@@ -24,7 +26,9 @@ const CORE = [
 self.addEventListener('install', (e) => {
   e.waitUntil(
     caches.open(VERSION)
-      .then((c) => c.addAll(CORE))
+      // cache individually: an optional asset (the 3D layer) may be missing
+      // without breaking the offline shell
+      .then((c) => Promise.all(CORE.map((u) => c.add(u).catch(() => null))))
       .then(() => self.skipWaiting())
   );
 });

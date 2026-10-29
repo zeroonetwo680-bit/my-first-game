@@ -1,0 +1,628 @@
+'use strict';
+/* ============================================================
+   NEON WRECKAGE — render3d.js
+   Optional WebGL (three.js) presentation layer.
+
+   Design contract
+   ---------------
+   * The 2D game keeps ALL simulation, collision, AI, scoring and HUD. This
+     file only decides how the world LOOKS, so gameplay and the headless test
+     suite are unaffected.
+   * The 3D canvas sits BEHIND the 2D canvas. The 2D renderer clears to
+     transparent and skips the ground/cars it no longer needs to draw, while
+     keeping FX, bullets, tracers, health bars and the DOM HUD on top.
+   * The camera is a perspective camera looking STRAIGHT DOWN. Every point on
+     the ground plane is then at the same distance, so ground positions project
+     with a perfectly uniform scale — identical to the 2D transform. Raised
+     geometry (cars, walls, pillars) still gets real perspective, which is what
+     makes it read as 3D without ever desynchronising from the hitboxes.
+   * Without WebGL, without three.js (e.g. the Node test sandbox) or when the
+     player turns it off, everything degrades to the original 2D renderer.
+   ============================================================ */
+
+const Render3D = {
+  /* state */
+  supported: null,        // null = not probed yet
+  enabled: false,         // user/intent flag (persisted)
+  ready: false,           // renderer actually running
+  canvas: null,
+  renderer: null,
+  scene: null,
+  camera: null,
+  sun: null,
+  world: null,            // { floor, walls, pillars, decal }
+  mode: 'game',           // 'game' | 'showcase'
+
+  /* tunables */
+  cfg: {
+    fov: 38,
+    dprCap: 1.5,
+    wallH: 96,
+    carH: 9.5,
+    shadowSize: 1024,
+    fogNear: 1100,
+    fogFar: 2600
+  },
+
+  _meshes: null,          // WeakMap entity -> group
+  _seen: [],
+  _allCars: [],
+  _force: false,          // test seam: pretend a renderer exists
+  _t: 0,
+  _dpr: 1,
+
+  /* ---------------- capability ---------------- */
+
+  /* THREE available AND a WebGL context can be created */
+  available() {
+    if (this.supported !== null) return this.supported;
+    this.supported = false;
+    try {
+      if (typeof THREE === 'undefined' || !THREE.WebGLRenderer) return this.supported;
+      if (typeof document === 'undefined' || !document.createElement) return this.supported;
+      const c = document.createElement('canvas');
+      const gl = c.getContext && (c.getContext('webgl2') || c.getContext('webgl') || c.getContext('experimental-webgl'));
+      if (!gl) return this.supported;
+      this.supported = true;
+    } catch (e) { this.supported = false; }
+    return this.supported;
+  },
+
+  /* true when the 3D layer is the one drawing the world this frame */
+  active() {
+    if (this._force) return true;
+    return !!(this.enabled && this.ready && this.renderer);
+  },
+
+  /* ---------------- setup ---------------- */
+
+  init(glCanvas) {
+    if (this.ready || !this.available()) return false;
+    try {
+      const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.cfg.dprCap);
+      this._dpr = dpr;
+      const renderer = new THREE.WebGLRenderer({
+        canvas: glCanvas, antialias: true, alpha: false, powerPreference: 'high-performance'
+      });
+      renderer.setPixelRatio(dpr);
+      renderer.shadowMap.enabled = true;
+      renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+      renderer.toneMapping = THREE.ACESFilmicToneMapping;
+      renderer.toneMappingExposure = 1.15;
+
+      this.renderer = renderer;
+      this.canvas = glCanvas;
+      this._buildScene();
+      if (this.scene && this.renderer) {
+        // the sun's shadow map only becomes meaningful once the renderer exists
+        this.sun.shadow.mapSize.set(this.cfg.shadowSize, this.cfg.shadowSize);
+      }
+      return true;
+    } catch (e) {
+      this.ready = false;
+      this.supported = false;
+      return false;
+    }
+  },
+
+  /* Scene graph + camera + lights. Kept separate from init() so the world
+     builders can be exercised headlessly (no WebGL) by the test suite. */
+  _buildScene() {
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x04060f);
+    scene.fog = new THREE.Fog(0x04060f, this.cfg.fogNear, this.cfg.fogFar);
+
+    const camera = new THREE.PerspectiveCamera(this.cfg.fov, 1, 1, 12000);
+    camera.up.set(0, 0, -1);                         // world +Z => screen down
+
+    scene.add(new THREE.AmbientLight(0x9fc4ff, 1.15));
+    scene.add(new THREE.HemisphereLight(0x35f0ff, 0x1a0b22, 0.85));
+
+    const sun = new THREE.DirectionalLight(0xdfe9ff, 2.1);
+    sun.castShadow = true;
+    sun.shadow.camera.near = 100;
+    sun.shadow.camera.far = 3600;
+    sun.shadow.bias = -0.0012;
+    sun.shadow.normalBias = 0.6;
+    scene.add(sun);
+    scene.add(sun.target);
+
+    /* magenta rim light from the opposite side for the neon feel */
+    const rim = new THREE.DirectionalLight(0xff3d81, 0.85);
+    rim.position.set(-800, 700, -900);
+    scene.add(rim);
+
+    this.scene = scene;
+    this.camera = camera;
+    this.sun = sun;
+    this._meshes = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+    this._seen = [];
+    this._allCars = [];
+    this.ready = true;
+    return scene;
+  },
+
+  /* ---------------- sizing ---------------- */
+
+  resize(vw, vh, qualityDpr) {
+    if (!this.ready || !this.renderer) return;
+    const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.cfg.dprCap, qualityDpr || 99);
+    this._dpr = dpr;
+    this.renderer.setPixelRatio(dpr);
+    this.renderer.setSize(vw, vh, false);
+    this._vw = vw; this._vh = vh;
+  },
+
+  /* ---------------- world (floor, walls, pillars) ---------------- */
+
+  buildWorld(game) {
+    if (!this.ready) return;
+    const S = this.scene;
+    const W = (typeof WORLD !== 'undefined' ? WORLD : { w: 2560, h: 2560 });
+
+    /* tear down the previous arena */
+    if (this.world) {
+      if (this.world.group) {
+        this.world.group.traverse((o) => {
+          if (o.geometry) o.geometry.dispose();
+          if (o.material) {
+            const mats = Array.isArray(o.material) ? o.material : [o.material];
+            mats.forEach((m) => { if (m.map && m.map.dispose) m.map.dispose(); m.dispose(); });
+          }
+        });
+        S.remove(this.world.group);
+      }
+      this.world = null;
+    }
+
+    const group = new THREE.Group();
+    const C = this.cfg;
+
+    /* --- floor: dark deck + neon tile grid --- */
+    const gridTex = this._gridTexture();
+    gridTex.wrapS = gridTex.wrapT = THREE.RepeatWrapping;
+    gridTex.repeat.set(W.w / 512, W.h / 512);
+    if (this.renderer && this.renderer.capabilities) gridTex.anisotropy = this.renderer.capabilities.getMaxAnisotropy();
+
+    const floorMat = new THREE.MeshStandardMaterial({
+      map: gridTex, color: 0xffffff, roughness: 0.62, metalness: 0.42
+    });
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(W.w, W.h), floorMat);
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(W.w / 2, 0, W.h / 2);
+    floor.receiveShadow = true;
+    group.add(floor);
+
+    /* --- skid marks / scorch decals live on their own layer --- */
+    if (game && game.decals && game.decals.canvas) {
+      const tex = new THREE.CanvasTexture(game.decals.canvas);
+      tex.needsUpdate = true;
+      const decal = new THREE.Mesh(
+        new THREE.PlaneGeometry(W.w, W.h),
+        new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: 0.9 })
+      );
+      decal.rotation.x = -Math.PI / 2;
+      decal.position.set(W.w / 2, 0.6, W.h / 2);
+      decal.renderOrder = 1;
+      group.add(decal);
+      this._decalTex = tex;
+      this._decalMesh = decal;
+    }
+
+    /* --- arena walls: tall slabs with a bright top edge --- */
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0x121a2c, roughness: 0.4, metalness: 0.7 });
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0x35f0ff });
+    const t = 34;
+    const sides = [
+      { x: W.w / 2, z: -t / 2, w: W.w + t * 2, d: t },
+      { x: W.w / 2, z: W.h + t / 2, w: W.w + t * 2, d: t },
+      { x: -t / 2, z: W.h / 2, w: t, d: W.h + t * 2 },
+      { x: W.w + t / 2, z: W.h / 2, w: t, d: W.h + t * 2 }
+    ];
+    for (const s of sides) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(s.w, C.wallH, s.d), wallMat);
+      m.position.set(s.x, C.wallH / 2, s.z);
+      m.receiveShadow = true;
+      group.add(m);
+      const e = new THREE.Mesh(new THREE.BoxGeometry(s.w, 3, s.d), edgeMat);
+      e.position.set(s.x, C.wallH + 1.5, s.z);
+      group.add(e);
+    }
+
+    /* --- pillars (they already exist in the simulation) --- */
+    if (game && game.pillars) {
+      const pMat = new THREE.MeshStandardMaterial({ color: 0x1b2540, roughness: 0.35, metalness: 0.75 });
+      const pTop = new THREE.MeshBasicMaterial({ color: 0xff3d81 });
+      for (const p of game.pillars) {
+        const r = (p.r || 40) * 0.92, h = 150;
+        const g = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.12, h, 8), pMat);
+        body.position.y = h / 2;
+        body.castShadow = true; body.receiveShadow = true;
+        g.add(body);
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(r * 1.02, r * 1.02, 4, 8), pTop);
+        cap.position.y = h + 2;
+        g.add(cap);
+        g.position.set(p.x, 0, p.y);
+        group.add(g);
+      }
+    }
+
+    S.add(group);
+    this.world = { group };
+  },
+
+  /* 512x512 tileable neon deck texture */
+  _gridTexture() {
+    const c = document.createElement('canvas');
+    c.width = c.height = 512;
+    const g = c.getContext('2d');
+    g.fillStyle = '#070a14';
+    g.fillRect(0, 0, 512, 512);
+
+    // subtle plate shading
+    const rad = g.createRadialGradient(256, 256, 40, 256, 256, 360);
+    rad.addColorStop(0, 'rgba(28,40,66,0.55)');
+    rad.addColorStop(1, 'rgba(4,6,15,0.0)');
+    g.fillStyle = rad;
+    g.fillRect(0, 0, 512, 512);
+
+    // fine grid
+    g.strokeStyle = 'rgba(53,240,255,0.16)';
+    g.lineWidth = 2;
+    for (let i = 0; i <= 512; i += 64) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 512); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(512, i); g.stroke();
+    }
+    // major grid
+    g.strokeStyle = 'rgba(255,61,129,0.20)';
+    g.lineWidth = 3;
+    for (let i = 0; i <= 512; i += 256) {
+      g.beginPath(); g.moveTo(i, 0); g.lineTo(i, 512); g.stroke();
+      g.beginPath(); g.moveTo(0, i); g.lineTo(512, i); g.stroke();
+    }
+    // glowing intersection dots
+    g.fillStyle = 'rgba(53,240,255,0.30)';
+    for (let y = 0; y <= 512; y += 256) {
+      for (let x = 0; x <= 512; x += 256) {
+        g.beginPath(); g.arc(x % 512, y % 512, 3, 0, Math.PI * 2); g.fill();
+      }
+    }
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    return tex;
+  },
+
+  /* ---------------- cars ---------------- */
+
+  _carGroup(spec) {
+    const C = this.cfg;
+    const len = spec.len || 46, wid = spec.wid || 26;
+    const bodyCol = spec.body || '#25c9e8';
+    const glow = spec.glow || '#35f0ff';
+    const heavy = !!spec.heavy;
+
+    const g = new THREE.Group();
+    const h = C.carH * (heavy ? 1.18 : 1);
+
+    /* chassis: a box tapered toward the nose so it reads as a car, not a brick */
+    const chassisGeo = new THREE.BoxGeometry(len, h, wid, 1, 1, 1);
+    const pos = chassisGeo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const f = (x + len / 2) / len;                 // 0 at the tail, 1 at the nose
+      pos.setZ(i, pos.getZ(i) * (1 - 0.26 * f));     // narrowing nose
+      if (pos.getY(i) > 0) pos.setY(i, pos.getY(i) * (1 - 0.42 * f)); // sloping bonnet
+    }
+    chassisGeo.computeVertexNormals();
+
+    const bodyMat = new THREE.MeshStandardMaterial({
+      color: new THREE.Color(bodyCol), roughness: 0.34, metalness: 0.72
+    });
+    const chassis = new THREE.Mesh(chassisGeo, bodyMat);
+    chassis.position.y = h / 2 + 3;
+    chassis.castShadow = true;
+    g.add(chassis);
+
+    /* cabin */
+    const cab = new THREE.Mesh(
+      new THREE.BoxGeometry(len * 0.42, h * 0.78, wid * 0.72),
+      new THREE.MeshStandardMaterial({ color: 0x0a1422, roughness: 0.18, metalness: 0.95 })
+    );
+    cab.position.set(-len * 0.06, h + 3 + h * 0.34, 0);
+    cab.castShadow = true;
+    g.add(cab);
+
+    /* wheels */
+    const wheelMat = new THREE.MeshStandardMaterial({ color: 0x090b12, roughness: 0.9, metalness: 0.1 });
+    const wr = 6.4, ww = 3.6;
+    const wheelGeo = new THREE.CylinderGeometry(wr, wr, ww, 12);
+    wheelGeo.rotateX(Math.PI / 2);                   // axis along Z (lateral)
+    const wx = len * 0.32, wz = wid * 0.5;
+    [[wx, wz], [wx, -wz], [-wx, wz], [-wx, -wz]].forEach(([px, pz]) => {
+      const w = new THREE.Mesh(wheelGeo, wheelMat);
+      w.position.set(px, wr, pz);
+      w.castShadow = true;
+      g.add(w);
+      const rimRing = new THREE.Mesh(
+        new THREE.TorusGeometry(wr * 0.62, 0.9, 6, 12),
+        new THREE.MeshBasicMaterial({ color: glow })
+      );
+      rimRing.position.set(px, wr, pz * 1.06);
+      rimRing.rotation.y = Math.PI / 2;
+      g.add(rimRing);
+    });
+
+    /* neon side strips + tail bar */
+    const neonMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(glow) });
+    const strip = new THREE.BoxGeometry(len * 0.72, 1.6, 1.6);
+    [wid * 0.5, -wid * 0.5].forEach((pz) => {
+      const s = new THREE.Mesh(strip, neonMat);
+      s.position.set(-len * 0.04, h * 0.62, pz);
+      g.add(s);
+    });
+    const tail = new THREE.Mesh(new THREE.BoxGeometry(2.2, 2.4, wid * 0.78), neonMat);
+    tail.position.set(-len / 2 + 1, h * 0.55, 0);
+    g.add(tail);
+
+    /* headlights */
+    const lightMat = new THREE.MeshBasicMaterial({ color: 0xfff6d8 });
+    [wid * 0.3, -wid * 0.3].forEach((pz) => {
+      const l = new THREE.Mesh(new THREE.BoxGeometry(2.4, 2.0, 4.2), lightMat);
+      l.position.set(len / 2 - 1.5, h * 0.42, pz);
+      g.add(l);
+    });
+
+    /* underglow pool on the deck (the classic neon look) */
+    const glowTex = this._glowTexture(glow);
+    const pool = new THREE.Mesh(
+      new THREE.PlaneGeometry(len * 2.1, wid * 2.6),
+      new THREE.MeshBasicMaterial({
+        map: glowTex, transparent: true, blending: THREE.AdditiveBlending,
+        depthWrite: false, opacity: 0.85
+      })
+    );
+    pool.rotation.x = -Math.PI / 2;
+    pool.position.y = 1.2;
+    pool.renderOrder = 2;
+    g.add(pool);
+
+    return g;
+  },
+
+  _glowTexture(colour) {
+    if (!this._glowCache) this._glowCache = {};
+    if (this._glowCache[colour]) return this._glowCache[colour];
+    const c = document.createElement('canvas');
+    c.width = c.height = 128;
+    const g = c.getContext('2d');
+    const grad = g.createRadialGradient(64, 64, 2, 64, 64, 62);
+    grad.addColorStop(0, colour);
+    grad.addColorStop(0.42, this._alpha(colour, 0.42));
+    grad.addColorStop(1, this._alpha(colour, 0));
+    g.fillStyle = grad;
+    g.fillRect(0, 0, 128, 128);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this._glowCache[colour] = tex;
+    return tex;
+  },
+
+  _alpha(hex, a) {
+    const h = String(hex).replace('#', '');
+    const n = parseInt(h.length === 3 ? h[0] + h[0] + h[1] + h[1] + h[2] + h[2] : h, 16);
+    return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+  },
+
+  _meshFor(ent, spec) {
+    let g = this._meshes ? this._meshes.get(ent) : null;
+    if (!g) {
+      g = this._carGroup(spec);
+      if (this._meshes) this._meshes.set(ent, g);
+      this.scene.add(g);
+      if (!this._allCars) this._allCars = [];
+      this._allCars.push(g);
+    }
+    return g;
+  },
+
+  _syncCar(ent, spec, dt) {
+    const g = this._meshFor(ent, spec);
+    g.position.x = ent.x;
+    g.position.z = ent.y;
+    g.rotation.y = -ent.angle;
+    g.visible = !ent.dead;
+    this._turret(g, ent);
+    if (this._seen.indexOf(g) < 0) this._seen.push(g);
+    return g;
+  },
+
+  /* player turret rotates independently of the chassis */
+  _turret(group, ent) {
+    if (ent.turret === undefined || ent.team !== 'player') return;
+    // the gun is a tiny barrel sticking out of the cabin
+    let gun = group.userData.gun;
+    if (!gun) {
+      gun = new THREE.Mesh(
+        new THREE.BoxGeometry(18, 2.4, 2.4),
+        new THREE.MeshStandardMaterial({ color: 0x2a3550, metalness: 0.9, roughness: 0.3 })
+      );
+      gun.position.y = this.cfg.carH + 4;
+      gun.castShadow = true;
+      group.add(gun);
+      group.userData.gun = gun;
+    }
+    gun.rotation.y = -(ent.turret - ent.angle);
+    gun.position.x = 6;
+  },
+
+  /* ---------------- camera ---------------- */
+
+  _applyCamera(game) {
+    const cam = game.cam;
+    const vw = this._vw || 1280, vh = this._vh || 720;
+    const zoom = cam.zoom || 1;
+    const H = (vh / zoom) / (2 * Math.tan(this.cfg.fov * Math.PI / 360));
+    this.camera.position.set(cam.x, H, cam.y);
+    this.camera.up.set(0, 0, -1);
+    this.camera.lookAt(cam.x, 0, cam.y);
+    this.camera.near = Math.max(1, H * 0.02);
+    this.camera.far = H * 3.2;
+    this.camera.aspect = vw / vh;
+    this.camera.updateProjectionMatrix();
+    this.camera.updateMatrixWorld();
+
+    /* keep the shadow frustum tight around what the player can see */
+    const half = Math.max(vw, vh) / (2 * zoom) + 260;
+    const s = this.sun;
+    s.position.set(cam.x + 320, 900, cam.y + 420);
+    s.target.position.set(cam.x, 0, cam.y);
+    s.target.updateMatrixWorld();
+    const sc = s.shadow.camera;
+    sc.left = -half; sc.right = half; sc.top = half; sc.bottom = -half;
+    sc.updateProjectionMatrix();
+  },
+
+  /* ---------------- per-frame ---------------- */
+
+  render(game) {
+    if (!this.active() || !game) return false;
+    if (!this.scene || !this.camera || !this.renderer) return false;   // scene not built yet
+    const dt = 1 / 60;
+    this._t += dt;
+
+    /* decals: refresh the texture a few times a second, not every frame */
+    if (this._decalTex && game.decals) {
+      this._decalTick = (this._decalTick || 0) + 1;
+      if (this._decalTick % 5 === 0) this._decalTex.needsUpdate = true;
+    }
+
+    this._seen.length = 0;
+
+    /* enemies */
+    if (game.enemies) {
+      for (let i = 0; i < game.enemies.length; i++) {
+        const e = game.enemies[i];
+        const def = (typeof ENEMY_TYPES !== 'undefined') ? ENEMY_TYPES[e.type] : null;
+        this._syncCar(e, {
+          len: Math.max(34, (e.r || 19) * 2.35),
+          wid: Math.max(20, (e.r || 19) * 1.34),
+          body: def ? def.color : '#e0246e',
+          glow: def ? def.glow : '#ff3d81',
+          heavy: e.type === 'brute' || e.type === 'boss'
+        }, dt);
+      }
+    }
+
+    /* player */
+    if (game.player && !game.player.dead) {
+      const cardef = (typeof CARS !== 'undefined') ? (CARS[game.player.carId] || null) : null;
+      const spr = (typeof SPRITES !== 'undefined' && SPRITES.pcars) ? SPRITES.pcars[game.player.carId] : null;
+      this._syncCar(game.player, {
+        len: spr ? spr.w : 46,
+        wid: spr ? spr.h - 8 : 26,
+        body: cardef ? cardef.body : '#25c9e8',
+        glow: cardef ? cardef.glow : '#35f0ff',
+        heavy: !!(cardef && cardef.heavy)
+      }, dt);
+    }
+
+    /* hide meshes whose entity went away this frame */
+    if (!this._seen) this._seen = [];
+    if (!this._allCars) this._allCars = [];
+    const cars = this._allCars;
+    for (let i = 0; i < cars.length; i++) {
+      if (this._seen.indexOf(cars[i]) < 0) cars[i].visible = false;
+    }
+    this._hideShowcase();
+
+    this._applyCamera(game);
+    this.renderer.render(this.scene, this.camera);
+    return true;
+  },
+
+  _hideShowcase() {
+    if (this._showCar) this._showCar.visible = false;
+    if (this._showFloor) this._showFloor.visible = false;
+  },
+
+  /* menu backdrop: a slow orbiting hero car on the neon deck */
+  showcase() {
+    if (!this.active()) return false;
+    if (!this.scene || !this.camera || !this.renderer) return false;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const dt = Math.min(0.05, Math.max(0.001, (now - (this._lastShow || now)) / 1000));
+    this._lastShow = now;
+    this._t += dt;
+    if (!this._showCar) {
+      this._showCar = this._carGroup({ len: 150, wid: 84, body: '#25c9e8', glow: '#35f0ff' });
+      this.scene.add(this._showCar);
+      if (!this.world) {
+        // a small private deck so the menu never depends on a running level
+        const g = new THREE.Group();
+        const tex = this._gridTexture();
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(8, 8);
+        const floor = new THREE.Mesh(
+          new THREE.PlaneGeometry(2400, 2400),
+          new THREE.MeshStandardMaterial({ map: tex, roughness: 0.55, metalness: 0.5 })
+        );
+        floor.rotation.x = -Math.PI / 2;
+        floor.receiveShadow = true;
+        g.add(floor);
+        this.scene.add(g);
+        this._showFloor = g;
+      }
+    }
+    this._showCar.visible = true;
+    if (this._showFloor) this._showFloor.visible = true;
+    const t = this._t;
+    this._showCar.position.set(0, 6 + Math.sin(t * 0.9) * 5, 0);
+    this._showCar.rotation.y = t * 0.42;
+
+    const R = 430;
+    this.camera.up.set(0, 1, 0);
+    this.camera.position.set(Math.cos(t * 0.18) * R, 300 + Math.sin(t * 0.3) * 40, Math.sin(t * 0.18) * R);
+    this.camera.lookAt(0, 20, 0);
+    this.camera.aspect = (this._vw || 1280) / (this._vh || 720);
+    this.camera.near = 10; this.camera.far = 5000;
+    this.camera.updateProjectionMatrix();
+    if (this.sun) {
+      this.sun.position.set(400, 900, 400);
+      this.sun.target.position.set(0, 0, 0);
+      this.sun.target.updateMatrixWorld();
+      const sc = this.sun.shadow.camera;
+      sc.left = -700; sc.right = 700; sc.top = 700; sc.bottom = -700;
+      sc.updateProjectionMatrix();
+    }
+    this.renderer.render(this.scene, this.camera);
+    return true;
+  },
+
+  /* ---------------- toggle ---------------- */
+
+  setEnabled(on, game) {
+    this.enabled = !!on;
+    if (this.canvas && this.canvas.style) {
+      this.canvas.style.display = this.enabled ? 'block' : 'none';
+    }
+    if (this.enabled) {
+      if (this.mode === 'game' && game && game.pillars) this.buildWorld(game);
+    } else if (this._showCar) {
+      // leaving the showcase: clean up the private deck
+      this.scene.remove(this._showCar);
+      this._showCar = null;
+      if (this._showFloor) { this.scene.remove(this._showFloor); this._showFloor = null; }
+    }
+    try { if (typeof store !== 'undefined' && store.set) store.set('nw.3d', this.enabled); } catch (e) {}
+    return this.enabled;
+  },
+
+  /* test hook: forget everything without touching the DOM */
+  _reset() {
+    this.ready = false; this.enabled = false; this.renderer = null; this.scene = null;
+    this.camera = null; this.world = null; this._meshes = null; this._seen = [];
+    this._showCar = null; this._showFloor = null; this._force = false;
+    this._seen = []; this._allCars = [];
+  }
+};

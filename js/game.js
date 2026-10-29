@@ -330,6 +330,7 @@ const Game = {
     dpr = Math.min(window.devicePixelRatio || 1, 2, cap);
     canvas.width = Math.ceil(vw * dpr);
     canvas.height = Math.ceil(vh * dpr);
+    if (typeof Render3D !== 'undefined' && Render3D.ready) Render3D.resize(vw, vh, cap);
   },
 
   applyQuality(level) {
@@ -376,6 +377,7 @@ const Game = {
     this.cam.zoom = clamp(Math.min(vw, vh) / 900, 0.62, 1.05);
 
     this.pillars = this.genPillars();
+    if (typeof Render3D !== 'undefined' && Render3D.active()) Render3D.buildWorld(this);
 
     this.runTime = 0;
     this.score = 0; this.shownScore = 0;
@@ -1657,8 +1659,19 @@ const Game = {
      ============================================================ */
   render() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.fillStyle = '#04060f';
-    ctx.fillRect(0, 0, vw, vh);
+    // Optional three.js presentation layer. When it is live it draws the deck
+    // and the cars BEHIND this canvas, so we clear to transparent and skip the
+    // passes it replaces. Everything else (FX, bullets, tracers, health bars,
+    // the DOM HUD) still draws here, on top, exactly as before.
+    const use3d = (typeof Render3D !== 'undefined') && Render3D.active();
+    if (use3d) {
+      if (this.state === 'menu') Render3D.showcase();
+      else Render3D.render(this);
+      ctx.clearRect(0, 0, vw, vh);
+    } else {
+      ctx.fillStyle = '#04060f';
+      ctx.fillRect(0, 0, vw, vh);
+    }
 
     const z = this.cam.zoom;
     ctx.save();
@@ -1669,15 +1682,17 @@ const Game = {
     const x0 = this.cam.x - vw / (2 * z) - 40, y0 = this.cam.y - vh / (2 * z) - 40;
     const x1 = this.cam.x + vw / (2 * z) + 40, y1 = this.cam.y + vh / (2 * z) + 40;
 
-    this.drawFloor(x0, y0, x1, y1);
-
-    // decals
-    ctx.drawImage(this.decals.canvas, 0, 0, WORLD.w, WORLD.h);
-
-    // pillars
     const t = this.time;
-    for (const p of this.pillars) {
-      ctx.drawImage(p.spr.c, p.x - p.spr.w / 2, p.y - p.spr.h / 2, p.spr.w, p.spr.h);
+    if (!use3d) {
+      this.drawFloor(x0, y0, x1, y1);
+
+      // decals
+      ctx.drawImage(this.decals.canvas, 0, 0, WORLD.w, WORLD.h);
+
+      // pillars
+      for (const p of this.pillars) {
+        ctx.drawImage(p.spr.c, p.x - p.spr.w / 2, p.y - p.spr.h / 2, p.spr.w, p.spr.h);
+      }
     }
 
     // pickups
@@ -1711,7 +1726,7 @@ const Game = {
 
     // cars
     for (const e of this.enemies) {
-      drawCar(e, SPRITES[e.type]);
+      if (!use3d) drawCar(e, SPRITES[e.type]);
       if (e.type === 'bomber' && e.fuseT !== null && Math.floor(e.fuseT * 14) % 2 === 0) {
         ctx.globalAlpha = 0.75;
         const g = FX.makeGlow('#ff5030');
@@ -1723,7 +1738,7 @@ const Game = {
     }
     const p = this.player;
     if (!p.dead) {
-      drawCar(p, SPRITES.pcars[p.carId] || SPRITES.pcars.interceptor);
+      if (!use3d) drawCar(p, SPRITES.pcars[p.carId] || SPRITES.pcars.interceptor);
       if (p.shield > 0) {
         const blink = p.shield < 1.2 && Math.floor(p.shield * 8) % 2 === 0;
         if (!blink) {
@@ -2327,6 +2342,37 @@ function wireInstallBanner() {
   });
 }
 
+/* ---------------- optional three.js layer ---------------- */
+function wire3d() {
+  if (typeof Render3D === 'undefined' || !Render3D.available()) return false;
+  const glCanvas = document.getElementById('gl');
+  if (!glCanvas || !Render3D.init(glCanvas)) return false;
+
+  // on capable machines the 3D view is the default; a player's choice sticks
+  Render3D.enabled = store.get('nw.3d', true) !== false;
+  Render3D.resize(vw, vh, QLEVELS[Game.qual.level].dprCap);
+  Render3D.setEnabled(Render3D.enabled, Game);
+  sync3dButton();
+  return true;
+}
+
+function sync3dButton() {
+  const b = document.getElementById('btn-3d');
+  if (!b || typeof Render3D === 'undefined') return;
+  const live = Render3D.active();
+  b.classList.toggle('off', !live);
+  b.classList.toggle('on3d', live);
+  const badge = document.getElementById('gl-badge');
+  if (badge) badge.classList.toggle('live', live);
+}
+
+function toggle3d() {
+  if (typeof Render3D === 'undefined' || !Render3D.ready) return;
+  Render3D.setEnabled(!Render3D.enabled, Game);
+  sync3dButton();
+  if (typeof AudioSys !== 'undefined') AudioSys.ui();
+}
+
 function wireUI() {
   const on = (id, fn) => {
     const el = document.getElementById(id);
@@ -2348,6 +2394,7 @@ function wireUI() {
   }
   on('btn-pause', () => { if (Game.state === 'playing' || Game.state === 'paused') Game.togglePause(); });
   on('btn-mute', () => Game.toggleMute());
+  on('btn-3d', () => toggle3d());
   on('btn-update', () => Platform.applyUpdate());
 
   const nameInput = document.getElementById('name-input');
@@ -2452,6 +2499,7 @@ function boot() {
   wireInstallBanner();
   Achievements.init();
   Platform.init();
+  wire3d();
   Game.enterMenu();
 
   // audio unlock on first gesture

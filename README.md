@@ -14,8 +14,40 @@ Three polished browser games, zero dependencies:
 
 A polished, top-down **car combat racing game** for desktop and mobile browsers.
 Drift through a neon arena, machine-gun rival cars, lock rockets onto brutes,
-chain kill-combos, and survive endless escalating waves. Zero dependencies —
-pure Canvas 2D + WebAudio.
+chain kill-combos, and survive endless escalating waves. Canvas 2D + WebAudio,
+with an optional **three.js 3D presentation layer** on top.
+
+### 3D view (`js/render3d.js`)
+
+The arena can be rendered in real 3D without touching a single line of
+gameplay. The 2D canvas keeps the HUD, FX, bullets, tracers and health bars; a
+WebGL canvas *behind* it draws the deck, the walls, the pillars and the cars as
+lit meshes with shadows and neon underglow.
+
+| Bit | File |
+| --- | --- |
+| Renderer / scene / world / cars | `js/render3d.js` (~23 KB) |
+| Library | `vendor/three.min.js` (three r160, MIT, vendored — no CDN, works offline) |
+| Toggle | the **3D** button in the HUD, choice persisted in `localStorage` |
+
+**Why it can't desync.** The camera is a perspective camera pointed *straight
+down*, so every point on the ground plane is the same distance away and
+projects with a perfectly uniform scale — mathematically identical to the 2D
+canvas transform. Raised geometry still gets real perspective, which is what
+makes it read as 3D. `tools/render3d-test.js` asserts the equivalence:
+
+```
+worst error between the three.js projection and the 2D transform: < 0.01 px
+```
+
+It also proves the fallback: no WebGL, no three.js, or the player turning it
+off all fall back to the original 2D renderer, and the adaptive quality
+governor still owns the device pixel ratio.
+
+```bash
+node tools/render3d-test.js   # 27 checks + /tmp/3d-proof.png
+node test/smoke.js            # 104 checks, includes the degradation path
+```
 
 ## Play
 

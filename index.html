@@ -20,6 +20,7 @@
 </head>
 <body>
 <div id="app">
+  <canvas id="gl" aria-hidden="true"></canvas>
   <canvas id="game"></canvas>
 
   <!-- ======================= IN-GAME HUD ======================= -->
@@ -32,6 +33,7 @@
     </div>
     <div class="hud-center">
       <div id="wave-label">WAVE 1</div>
+      <div id="gl-badge">3D</div>
       <div id="enemies-label">4 HOSTILES</div>
     </div>
     <div id="boss-bar" class="hidden"><span id="boss-name">WARLORD</span><div class="bb-track"><i id="boss-fill"></i></div></div>
@@ -41,6 +43,7 @@
       <div id="combo" class="hidden"><span id="combo-x">x2</span><em>COMBO</em><div id="combo-bar"><i id="combo-fill"></i></div></div>
     </div>
     <div class="hud-buttons">
+      <button id="btn-3d" class="icon-btn off" aria-label="Toggle 3D view">3D</button>
       <button id="btn-full" class="icon-btn" aria-label="Fullscreen">&#x26F6;</button>
       <button id="btn-mute" class="icon-btn" aria-label="Toggle sound">&#9834;</button>
       <button id="btn-pause" class="icon-btn" aria-label="Pause">&#10074;&#10074;</button>
@@ -164,6 +167,8 @@
 <script src="js/achievements.js"></script>
 <script src="js/input.js"></script>
 <script src="js/platform.js"></script>
+<script src="vendor/three.min.js"></script>
+<script src="js/render3d.js"></script>
 <script src="js/game.js"></script>
 <script>
 if ('serviceWorker' in navigator) {

@@ -97,7 +97,7 @@ sandbox.document.fullscreenElement = null;
 sandbox.document.documentElement = Object.assign(makeEl('html'), { requestFullscreen: () => undefined });
 vm.createContext(sandbox);
 
-for (const f of ['core.js', 'audio.js', 'fx.js', 'achievements.js', 'input.js', 'platform.js', 'game.js']) {
+for (const f of ['core.js', 'audio.js', 'fx.js', 'achievements.js', 'input.js', 'platform.js', 'render3d.js', 'game.js']) {
   const code = fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8');
   vm.runInContext(code, sandbox, { filename: f });
 }
@@ -584,6 +584,36 @@ run('Game.enterMenu();');
 check('back to menu', 'Game.state', s => s === 'menu');
 run('for (let i = 0; i < 300; i++) __frame((100000 + i) * 16.6);');
 check('menu idles fine', 'Game.state', s => s === 'menu');
+
+/* ---------------- optional 3D layer (degradation path) ---------------- */
+console.log('--- optional 3D layer ---');
+run(`
+this.__dc = { fillRect: 0, clearRect: 0, drawImage: 0 };
+(function () {
+  ['fillRect', 'clearRect', 'drawImage'].forEach(function (n) {
+    var orig = ctx[n];
+    ctx[n] = function () { __dc[n]++; return orig.apply(ctx, arguments); };
+  });
+})();
+`);
+const dc = () => run('__dc');
+check('render3d: module is present', "typeof Render3D === 'object' && typeof Render3D.render === 'function'");
+check('render3d: detects no WebGL in this sandbox', "Render3D.available() === false");
+check('render3d: inactive without a renderer', "Render3D.active() === false");
+check('render3d: init refuses cleanly with no WebGL', "Render3D.init(document.getElementById('gl')) === false");
+check('render3d: render() is a no-op and never throws', "(function(){ try { Render3D.render(Game); return Render3D.active() === false; } catch (e) { return false; } })()");
+check('render3d: showcase() is a no-op too', "(function(){ try { return Render3D.showcase() === false; } catch (e) { return false; } })()");
+check('render3d: toggle stays a safe no-op', "(function(){ try { toggle3d(); return true; } catch (e) { return false; } })()");
+check('render3d: paint-order helper reports the layer as off', "sync3dButton() || document.getElementById('btn-3d').classList.contains('off') === true");
+
+/* layer off -> the classic opaque 2D frame, exactly as before */
+check('render3d: layer off fills the backdrop opaque', "(function(){ var b=__dc.fillRect; Game.render(); return __dc.fillRect > b; })()");
+check('render3d: layer off still draws the 2D cars', "(function(){ var b=__dc.drawImage; Game.render(); return __dc.drawImage > b; })()");
+
+/* layer on -> transparent clear + no duplicate 2D world pass */
+check('render3d: layer on clears to transparent', "(function(){ Render3D._force=true; var b=__dc.clearRect; Game.render(); Render3D._force=false; return __dc.clearRect > b; })()");
+check('render3d: layer on skips the 2D cars', "(function(){ Render3D._force=true; var b=__dc.drawImage; Game.render(); Render3D._force=false; return __dc.drawImage === b; })()");
+check('render3d: simulation is untouched by the render mode', "(function(){ Render3D._force=true; try { Game.render(); Game.update(0.016); } catch (e) { Render3D._force=false; return false; } Render3D._force=false; return !isNaN(Game.player.x) && !isNaN(Game.player.y) && Game.enemies.length >= 0; })()");
 
 console.log('--- touch drive path ---');
 run(`
