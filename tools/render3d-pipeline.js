@@ -101,3 +101,17 @@ const p = vm.runInContext('({x:Game.player.x,y:Game.player.y})', sb);
 const v=new THREE.Vector3(p.x,8,p.y); v.project(cam);
 console.log('player NDC          :', v.x.toFixed(3), v.y.toFixed(3), v.z.toFixed(3));
 console.log('player on screen px :', ((v.x*.5+.5)*VW).toFixed(0), ((.5-v.y*.5)*VH).toFixed(0));
+
+/* ---- single-canvas compositing: the GL frame must reach the game canvas ---- */
+let blits = 0, blitSize = null;
+const origDraw = realCanvas.getContext('2d').drawImage.bind(realCanvas.getContext('2d'));
+const g2 = realCanvas.getContext('2d');
+g2.drawImage = function (src, x, y, w, h) {
+  if (src === R3.renderer.domElement) { blits++; blitSize = [w, h]; }
+  return origDraw.apply(g2, arguments);
+};
+R3.renderer.domElement = createCanvas(960, 540);   // a real canvas, like the GL one
+vm.runInContext('Game.render()', sb);
+console.log('composite blits     :', blits, blitSize ? '(' + blitSize.join('x') + ')' : '');
+console.log('pixel probe         :', JSON.stringify(R3._probe()));
+console.log('probe verdict       :', R3._probeResult && R3._probeResult.blank ? 'BLANK -> would fall back' : 'not probed yet (needs a real GL context)');

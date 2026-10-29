@@ -4,7 +4,7 @@
    ============================================================ */
 'use strict';
 
-const VERSION = 'nw-v9';   // v9: network-first shell so fixes land immediately
+const VERSION = 'nw-v10';  // v10: single-canvas 3D compositing
 const CORE = [
   './',
   './index.html',

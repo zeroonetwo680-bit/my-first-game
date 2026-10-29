@@ -65,6 +65,34 @@ triangles submitted: 2434 | player NDC 0.000 0.000 0.972 -> screen (640, 360)
 If that says 2434 triangles while the screen is black, the bug is layering, not
 graphics. The HUD badge shows the same number live (`3D · 2434t`).
 
+### One canvas, by construction
+
+The 3D view used to be a second canvas stacked behind the game canvas. Three
+separate bugs in a row (CSS background, metals with no env map, fog distances)
+and then a silent three.js early-return all produced the same black screen, and
+none of them could be reproduced without a GPU.
+
+So the architecture changed instead of the bug being chased again:
+
+```
+three.js ──render()──> its own offscreen canvas ──drawImage()──> the game canvas
+```
+
+There is **one** canvas in the DOM. No z-index, no CSS background, no stacking
+order, nothing that can hide the image. The 3D frame is copied into the game
+canvas at the top of `Game.render()` and everything else (FX, tracers, health
+bars, HUD) draws on top of that image exactly as before.
+
+`preserveDrawingBuffer: true` keeps the GL buffer readable for the copy.
+
+Because a triangle count proved to be a useless signal (with culling off it counts
+geometry that never reaches a pixel), visibility is now measured, not assumed:
+`_probe()` reads the framebuffer back with `readPixels` from five patches and asks
+"is anything not the clear colour?". If four probes half a second apart all come
+back blank, the layer switches itself off and the 2D renderer takes over — the
+player always ends up with a playable game. The HUD badge reports the verdict:
+`3D 2434t · px ok` or `3D 0t · BLANK`.
+
 ### Why the scene submitted 0 triangles
 
 The build was verified to populate 47 meshes and, with real frustum culling,

@@ -134,19 +134,6 @@ ok('decals become a canvas texture on the deck', !!Render3D._decalTex && Render3
 console.log('\n--- black-screen regressions ---');
 
 /* BUG 1: canvas#game paints an opaque CSS background straight over #gl. */
-(() => {
-  const css = fs.readFileSync(path.join(R, 'css/style.css'), 'utf8');
-  const gameHasBg = /canvas#game\s*\{[^}]*background:\s*var\(--ink\)/.test(css);
-  const neutralised = /body\.has3d\s+canvas#game\s*\{[^}]*background:\s*transparent/.test(css);
-  ok('canvas#game still opts into an opaque background', gameHasBg);
-  ok('that background is neutralised while 3D is live', neutralised);
-  ok('#gl sits BEHIND #game in the stacking order', (function () {
-    const gl = Number((/#gl\s*\{[^}]*z-index:\s*(-?\d+)/.exec(css) || [])[1]);
-    const gm = Number((/#game\s*\{\s*z-index:\s*(-?\d+)/.exec(css) || [])[1]);
-    return isFinite(gl) && isFinite(gm) && gl < gm;
-  })());
-})();
-
 /* BUG 2: a metal with nothing to reflect renders black. */
 ok('the scene has an environment map', !!Render3D.scene.environment);
 ok('the environment map is equirectangular', Render3D.scene.environment.mapping === THREE.EquirectangularReflectionMapping);
@@ -205,76 +192,71 @@ ok('setEnabled toggles the has3d body class', (function () {
   return on === true && off === false;
 })());
 
-/* ---------------- layering is enforced inline, not by CSS ---------------- */
-console.log('\n--- inline layering (immune to a stale stylesheet) ---');
+/* ---------------- single canvas: nothing can hide the 3D image ------------ */
+console.log('\n--- single-canvas compositing ---');
 (() => {
-  const glEl = sandbox.document.getElementById('gl');
-  const gameEl = sandbox.document.getElementById('game');
-  Render3D.canvas = glEl;
-  Render3D.ready = true;
-
-  Render3D.setEnabled(true, null);
-  ok('3D on: #gl is positioned and visible inline', glEl.style.display === 'block' && glEl.style.zIndex === '0' && glEl.style.width === '100%');
-  ok('3D on: #game background is cleared inline', gameEl.style.background === 'transparent');
-  ok('3D on: body.has3d is set too (belt and braces)', sandbox.document.body.classList.contains('has3d'));
-
-  Render3D.setEnabled(false, null);
-  ok('3D off: #gl is hidden inline', glEl.style.display === 'none');
-  ok('3D off: #game keeps its own background', gameEl.style.background === '');
-  ok('3D off: body.has3d is removed', !sandbox.document.body.classList.contains('has3d'));
+  const html = fs.readFileSync(path.join(R, 'index.html'), 'utf8');
+  ok('there is no second canvas in the DOM', !/id="gl"/.test(html));
+  ok('the 3D canvas is created by the module itself', /document\.createElement\('canvas'\)/.test(fs.readFileSync(path.join(R, 'js/render3d.js'), 'utf8')));
+  ok('render3d exposes composite()', typeof Render3D.composite === 'function');
 })();
 
-/* ---------------- it gives up on itself instead of showing a black screen --- */
-console.log('\n--- dead-frame self check ---');
+/* composite() must blit the WebGL frame into the 2D context */
 (() => {
+  const drawn = [];
+  const fakeCtx = { drawImage: (src, x, y, w, h) => drawn.push([src, x, y, w, h]) };
   Render3D.ready = true;
   Render3D.enabled = true;
-  Render3D.renderer = { info: { render: { triangles: 0 } } };
-  for (let i = 0; i < 50; i++) Render3D._selfCheck();
-  ok('a layer that submits no geometry falls back to 2D', Render3D.enabled === false && Render3D.ready === true);
+  Render3D.renderer = { domElement: { width: 640, height: 360 }, getContext: () => ({ isContextLost: () => false }) };
+  const ok1 = Render3D.composite(fakeCtx, 1280, 720);
+  ok('composite() blits the GL canvas into the game canvas', ok1 === true && drawn.length === 1 && drawn[0][3] === 1280 && drawn[0][4] === 720);
 
-  Render3D.enabled = true;
-  Render3D.renderer = { info: { render: { triangles: 1200 } } };
-  Render3D._deadFrames = 40;
-  Render3D._selfCheck();
-  ok('a layer that draws geometry is left alone', Render3D.enabled === true && Render3D._deadFrames === 0);
-  Render3D.renderer = null;
-})();
-
-/* -------- a dead WebGL context must fall back, never fake a render -------- */
-console.log('\n--- lost context ---');
-(() => {
-  Render3D.ready = true;
-  Render3D.enabled = true;
-
-  /* three.js returns silently from render() when the context is gone, so the
-     only symptom is "0 triangles and a black screen". Detect the cause. */
-  Render3D.renderer = {
-    getContext: () => ({ isContextLost: () => true }),
-    info: { render: { triangles: 0 } }
-  };
-  Render3D._selfCheck();
-  ok('a lost context disables the layer on the first frame', Render3D.enabled === false && Render3D._contextLost === true);
-
-  /* and the 2D canvas gets its own background back */
-  Render3D.ready = true;
-  Render3D._contextLost = false;
-  Render3D.renderer = { getContext: () => ({ isContextLost: () => false }), info: { render: { triangles: 0 } } };
-  Render3D.enabled = true;
-  Render3D.setEnabled(true, null);
-  const cleared = sandbox.document.getElementById('game').style.background === 'transparent';
-  for (let i = 0; i < 25; i++) Render3D._selfCheck();
-  const restored = sandbox.document.getElementById('game').style.background === '';
-  ok('a live context that draws nothing recovers within ~0.3s', Render3D.enabled === false && cleared && restored);
-
-  /* a healthy layer is never touched */
-  Render3D.enabled = true;
-  Render3D.ready = true;
-  Render3D.renderer = { getContext: () => ({ isContextLost: () => false }), info: { render: { triangles: 2400 } } };
-  for (let i = 0; i < 60; i++) Render3D._selfCheck();
-  ok('a healthy layer keeps running', Render3D.enabled === true && Render3D._lastTris === 2400);
+  Render3D.renderer = { domElement: { width: 0, height: 0 }, getContext: () => ({}) };
+  ok('composite() refuses an empty drawing buffer', Render3D.composite(fakeCtx, 1280, 720) === false);
   Render3D.renderer = null;
   Render3D.enabled = false;
+  Render3D.ready = false;
+})();
+
+/* ---------------- the pixel probe is the real visibility test ------------- */
+console.log('\n--- pixel probe ---');
+(() => {
+  Render3D.ready = true;
+  Render3D.enabled = true;
+
+  /* a frame that is entirely the clear colour => blank => fall back */
+  let blankFrames = 0;
+  Render3D.renderer = {
+    getContext: () => ({
+      isContextLost: () => false,
+      drawingBufferWidth: 640, drawingBufferHeight: 360,
+      RGBA: 6407, UNSIGNED_BYTE: 5121,
+      readPixels: (x, y, w, h, f, t, buf) => { for (let i = 0; i < buf.length; i++) buf[i] = 0; }
+    }),
+    info: { render: { triangles: 2400 } }
+  };
+  const p1 = Render3D._probe();
+  ok('an all-black frame is reported blank', p1 && p1.blank === true && p1.lit === 0, JSON.stringify(p1));
+  do { Render3D._selfCheck(); blankFrames++; } while (Render3D.enabled && blankFrames < 400);
+  ok('four blank probes disable the layer (2D takes over)', Render3D.enabled === false);
+
+  /* a frame with real content must be accepted */
+  Render3D.ready = true; Render3D.enabled = true;
+  Render3D._pixelsProven = false; Render3D._probeTick = 0; Render3D._probeResult = null;
+  Render3D.renderer = {
+    getContext: () => ({
+      isContextLost: () => false,
+      drawingBufferWidth: 640, drawingBufferHeight: 360,
+      RGBA: 6407, UNSIGNED_BYTE: 5121,
+      readPixels: (x, y, w, h, f, t, buf) => { for (let i = 0; i < buf.length; i += 4) { buf[i] = 40; buf[i + 1] = 200; buf[i + 2] = 255; buf[i + 3] = 255; } }
+    }),
+    info: { render: { triangles: 2400 } }
+  };
+  const p2 = Render3D._probe();
+  ok('a frame with content is not blank', p2 && p2.blank === false && p2.lit === p2.samples, JSON.stringify(p2));
+  for (let i = 0; i < 40; i++) Render3D._selfCheck();
+  ok('proven pixels keep the layer running', Render3D.enabled === true && Render3D._pixelsProven === true);
+  Render3D.renderer = null; Render3D.enabled = false; Render3D.ready = false;
 })();
 
 /* ---------------- the player marker ---------------- */

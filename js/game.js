@@ -1663,13 +1663,18 @@ const Game = {
     // and the cars BEHIND this canvas, so we clear to transparent and skip the
     // passes it replaces. Everything else (FX, bullets, tracers, health bars,
     // the DOM HUD) still draws here, on top, exactly as before.
-    const use3d = (typeof Render3D !== 'undefined') && Render3D.active();
+    /* ONE canvas: three.js renders into its own offscreen buffer and the image
+       is copied in here with drawImage. No second canvas in the DOM means no
+       z-index, no CSS background and no stacking order that can hide the 3D
+       view - the failure mode that produced three black screens. */
+    let use3d = (typeof Render3D !== 'undefined') && Render3D.active();
     if (use3d) {
       if (this.state === 'menu') Render3D.showcase();
       else Render3D.render(this);
+      if (!Render3D.composite(ctx, vw, vh)) use3d = false;
       Render3D.diagTick();              // keeps the live 3D readout truthful
-      ctx.clearRect(0, 0, vw, vh);
-    } else {
+    }
+    if (!use3d) {
       ctx.fillStyle = '#04060f';
       ctx.fillRect(0, 0, vw, vh);
     }

@@ -81,39 +81,30 @@ const Render3D = {
 
   /* ---------------- setup ---------------- */
 
-  init(glCanvas) {
+  /* One canvas, by construction.
+     three.js draws into its OWN offscreen canvas and the game composites that
+     image into the game canvas with drawImage(). There is no second canvas in
+     the DOM, so there is no z-index, no CSS background and no stacking order
+     that can hide the 3D view. This replaces the dual-canvas arrangement that
+     produced a black screen three times in a row. */
+  init() {
     if (this.ready || !this.available()) return false;
     try {
-      /* Some drivers behave badly when a context is created on a display:none
-         canvas, and a stale stylesheet may never have shown it. Force the
-         geometry inline first. */
-      if (glCanvas && glCanvas.style) {
-        glCanvas.style.position = 'absolute';
-        glCanvas.style.left = '0'; glCanvas.style.top = '0';
-        glCanvas.style.right = '0'; glCanvas.style.bottom = '0';
-        glCanvas.style.width = '100%'; glCanvas.style.height = '100%';
-        glCanvas.style.zIndex = '0';
-        glCanvas.style.display = 'block';
-        glCanvas.style.background = '#04060f';
-      }
       const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.cfg.dprCap);
       this._dpr = dpr;
 
-      /* Listen for context loss BEFORE the context exists. A GPU can lose the
-         context the instant it is created (weak mobile GPU, too many live
-         contexts, a sandboxed iframe). When that happens three.js' render()
-         returns silently - no exception, no drawing - while the layer still
-         reports itself active and the 2D canvas has already been cleared. That
-         is a black screen with only the FX visible. */
+      const glCanvas = document.createElement('canvas');
+      glCanvas.width = 2; glCanvas.height = 2;      // real size comes from resize()
+      this.canvas = glCanvas;
+
+      /* Listen for context loss BEFORE the context exists: a GPU can lose it
+         the instant it is created. */
       const onLost = (e) => {
         if (e && e.preventDefault) e.preventDefault();
         this._contextLost = true;
         this.ready = false;
         this.enabled = false;
         try {
-          if (glCanvas.style) glCanvas.style.display = 'none';
-          const g2 = document.getElementById('game');
-          if (g2 && g2.style) g2.style.background = '';
           if (document.body && document.body.classList) document.body.classList.remove('has3d');
           if (typeof sync3dButton === 'function') sync3dButton();
         } catch (err) {}
@@ -122,8 +113,14 @@ const Render3D = {
       if (glCanvas.addEventListener) glCanvas.addEventListener('webglcontextlost', onLost, false);
 
       const renderer = new THREE.WebGLRenderer({
-        canvas: glCanvas, antialias: true, alpha: false,
-        powerPreference: 'high-performance', failIfMajorPerformanceCaveat: false
+        canvas: glCanvas,
+        antialias: true,
+        alpha: false,
+        // the image is copied into a 2D canvas every frame, so the drawing
+        // buffer must still be readable after the render call returns
+        preserveDrawingBuffer: true,
+        powerPreference: 'high-performance',
+        failIfMajorPerformanceCaveat: false
       });
       renderer.setPixelRatio(dpr);
       renderer.shadowMap.enabled = true;
@@ -131,32 +128,40 @@ const Render3D = {
       renderer.toneMapping = THREE.ACESFilmicToneMapping;
       renderer.toneMappingExposure = 1.15;
 
-      /* A lost context (driver reset, GPU pressure, tab backgrounded too long)
-         would otherwise leave a permanently black canvas. Drop back to the 2D
-         renderer instead of pretending to draw. */
-      /* The context can already be dead by the time the constructor returns.
-         three.js would then render nothing at all, forever, without a word. */
       const ctx0 = renderer.getContext && renderer.getContext();
       if (!ctx0 || (ctx0.isContextLost && ctx0.isContextLost())) {
         try { console.warn('[Render3D] the WebGL context was lost at creation'); } catch (err) {}
         this._contextLost = true;
-        this.ready = false;
-        this.enabled = false;
-        try { if (glCanvas.style) glCanvas.style.display = 'none'; } catch (err) {}
+        this.ready = false; this.enabled = false;
         return false;
       }
 
       this.renderer = renderer;
-      this.canvas = glCanvas;
       this._buildScene();
       if (this.scene && this.renderer) {
-        // the sun's shadow map only becomes meaningful once the renderer exists
         this.sun.shadow.mapSize.set(this.cfg.shadowSize, this.cfg.shadowSize);
       }
       return true;
     } catch (e) {
+      try { console.warn('[Render3D] init failed: ' + (e && e.message)); } catch (err) {}
       this.ready = false;
       this.supported = false;
+      return false;
+    }
+  },
+
+  /* Copy the rendered 3D frame into the game canvas. Called right after
+     render(), in the same animation frame, so the drawing buffer is valid. */
+  composite(ctx, vw, vh) {
+    if (!this.active() || !this.renderer) return false;
+    const src = this.renderer.domElement;
+    if (!src || !src.width || !src.height) return false;
+    try {
+      ctx.drawImage(src, 0, 0, vw, vh);
+      this._composited = (this._composited || 0) + 1;
+      return true;
+    } catch (e) {
+      try { console.warn('[Render3D] composite failed: ' + (e && e.message)); } catch (err) {}
       return false;
     }
   },
@@ -740,11 +745,52 @@ const Render3D = {
     return n;
   },
 
+  /* THE REAL TEST: read the framebuffer back and look at the pixels.
+
+     Counting triangles proved worthless - with frustum culling off, the counter
+     includes geometry that never reaches a visible pixel. The only question
+     that matters is "are there non-background pixels in the frame?", and the
+     GPU can answer it directly. Cost is one readPixels of 5 tiny patches, run
+     at most twice a second and only until the layer has proven itself. */
+  _probe() {
+    const r = this.renderer;
+    if (!r) return null;
+    const gl = r.getContext && r.getContext();
+    if (!gl || !gl.readPixels) return null;
+    if (gl.isContextLost && gl.isContextLost()) return null;
+
+    const w = gl.drawingBufferWidth, h = gl.drawingBufferHeight;
+    if (!w || !h) return { blank: true, reason: 'zero drawing buffer ' + w + 'x' + h };
+
+    const N = 4;
+    const buf = new Uint8Array(N * N * 4);
+    /* sample the middle and the four quadrants - the arena always fills the
+       screen, so a car, a wall or the deck grid must appear in at least one */
+    const spots = [
+      [(w >> 1) - (N >> 1), (h >> 1) - (N >> 1)],
+      [Math.floor(w * 0.25), Math.floor(h * 0.25)],
+      [Math.floor(w * 0.75), Math.floor(h * 0.25)],
+      [Math.floor(w * 0.25), Math.floor(h * 0.75)],
+      [Math.floor(w * 0.75), Math.floor(h * 0.75)]
+    ];
+    let lit = 0, samples = 0, maxc = 0;
+    for (const [x, y] of spots) {
+      const px = Math.max(0, Math.min(w - N, x));
+      const py = Math.max(0, Math.min(h - N, y));
+      try { gl.readPixels(px, py, N, N, gl.RGBA, gl.UNSIGNED_BYTE, buf); } catch (e) { continue; }
+      for (let i = 0; i < buf.length; i += 4) {
+        samples++;
+        const v = buf[i] + buf[i + 1] + buf[i + 2];
+        maxc = Math.max(maxc, v);
+        if (v > 24) lit++;                       // brighter than the clear colour
+      }
+    }
+    return { blank: lit === 0, lit, samples, maxc, w, h };
+  },
+
   _selfCheck() {
     if (!this.renderer || !this.renderer.info) return;
 
-    /* The cheapest, most reliable liveness test there is: ask the context.
-       A lost context makes three.js skip every draw call without throwing. */
     const ctx = this.renderer.getContext && this.renderer.getContext();
     if (ctx && ctx.isContextLost && ctx.isContextLost()) {
       if (!this._force) {
@@ -756,34 +802,43 @@ const Render3D = {
       return;
     }
 
-    const tris = this.renderer.info.render.triangles;
-    this._lastTris = tris;
+    this._lastTris = this.renderer.info.render.triangles;
     this._lastMeshes = this._meshCount();
+
+    /* prove the pixels, twice a second, until it works; then stop paying for it */
+    this._probeTick = (this._probeTick || 0) + 1;
+    if (!this._pixelsProven && this._probeTick % 30 === 0 && !this._force) {
+      const p = this._probe();
+      if (p) {
+        this._probeResult = p;
+        if (!p.blank) {
+          this._pixelsProven = true;
+          this._blankFrames = 0;
+        } else {
+          this._blankFrames = (this._blankFrames || 0) + 1;
+          if (this._blankFrames === 1) {
+            try {
+              console.warn('[Render3D] the frame is blank', {
+                canvas: p.w + 'x' + p.h, tris: this._lastTris, meshes: this._lastMeshes,
+                camera: this.camera && this.camera.position,
+                camNear: this.camera && this.camera.near, camFar: this.camera && this.camera.far,
+                cssSize: this._vw + 'x' + this._vh
+              });
+            } catch (e) {}
+          }
+          /* three blank probes, half a second apart: give the player a game */
+          if (this._blankFrames >= 4) {
+            this._blankFrames = 0;
+            try { console.warn('[Render3D] nothing visible after 2s - switching to the 2D renderer'); } catch (e) {}
+            this.setEnabled(false, null);
+            try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
+          }
+        }
+      }
+    }
+
     this._badgeTick = (this._badgeTick || 0) + 1;
     if (this._badgeTick % 8 === 0) this._updateBadge();
-    if (this._force) return;
-    if (tris > 0) { this._deadFrames = 0; return; }
-    this._deadFrames = (this._deadFrames || 0) + 1;
-
-    /* Nothing drawn even though the scene is populated: something is rejecting
-       every object. Log the shape of the problem once, so the readout is
-       actionable instead of just "black". */
-    if (this._deadFrames === 8 && this._lastMeshes > 0) {
-      try {
-        console.warn('[Render3D] scene has ' + this._lastMeshes + ' meshes but 0 triangles were drawn',
-          { camera: this.camera && this.camera.position, fov: this.camera && this.camera.fov,
-            near: this.camera && this.camera.near, far: this.camera && this.camera.far,
-            rendererSize: this._vw + 'x' + this._vh });
-      } catch (e) {}
-    }
-
-    /* give up quickly: the player must never be stuck on a dead canvas */
-    if (this._deadFrames > 20) {
-      this._deadFrames = 0;
-      try { console.warn('[Render3D] no geometry reached the GPU; switching to the 2D renderer'); } catch (e) {}
-      this.setEnabled(false, null);
-      try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
-    }
   },
 
   /* The live readout. If the screen is black but this says "3D 2434t", the GPU
@@ -796,7 +851,11 @@ const Render3D = {
       if (!b) return;
       const live = this.active();
       b.classList.toggle('live', live);
-      if (live) b.textContent = '3D ' + (this._lastTris || 0) + 't / ' + (this._lastMeshes || 0) + 'm';
+      if (live) {
+        const p = this._probeResult;
+        const verdict = !p ? '?' : (p.blank ? 'BLANK' : 'px ok');
+        b.textContent = '3D ' + (this._lastTris || 0) + 't \u00b7 ' + verdict;
+      }
     } catch (e) {}
   },
 
@@ -886,36 +945,20 @@ const Render3D = {
     this.enabled = !!on;
     const live = !!(this.enabled && this.ready);
     this._deadFrames = 0;
+    this._blankFrames = 0;
+    this._pixelsProven = false;
+    this._probeResult = null;
 
-    /* LAYERING, done inline. A stylesheet can go stale in the service-worker
-       cache (that is exactly what happened), and the opaque background on
-       canvas#game then paints straight over the WebGL canvas: the player sees a
-       black screen with only the 2D FX on top. Inline styles cannot be beaten
-       by a cached CSS file, so this works whatever the stylesheet says. */
     try {
-      const gl = this.canvas;
-      if (gl && gl.style) {
-        gl.style.position = 'absolute';
-        gl.style.left = '0'; gl.style.top = '0';
-        gl.style.right = '0'; gl.style.bottom = '0';
-        gl.style.width = '100%'; gl.style.height = '100%';
-        gl.style.zIndex = '0';
-        gl.style.display = live ? 'block' : 'none';
-      }
-      const g2 = (typeof document !== 'undefined' && document.getElementById)
-        ? document.getElementById('game') : null;
-      if (g2 && g2.style) {
-        g2.style.background = live ? 'transparent' : '';
-        g2.style.zIndex = '1';
-      }
       if (typeof document !== 'undefined' && document.body && document.body.classList) {
         document.body.classList.toggle('has3d', live);
       }
     } catch (e) {}
-    if (this.enabled) {
+    if (live) {
+      this.resize(this._vw || (typeof window !== 'undefined' ? window.innerWidth : 1280),
+        this._vh || (typeof window !== 'undefined' ? window.innerHeight : 720), 99);
       if (this.mode === 'game' && game && game.pillars) this.buildWorld(game);
     } else if (this._showCar) {
-      // leaving the showcase: clean up the private deck
       this.scene.remove(this._showCar);
       this._showCar = null;
       if (this._showFloor) { this.scene.remove(this._showFloor); this._showFloor = null; }
@@ -925,7 +968,7 @@ const Render3D = {
     return this.enabled;
   },
 
-  /* test hook: forget everything without touching the DOM */
+    /* test hook: forget everything without touching the DOM */
   _reset() {
     this.ready = false; this.enabled = false; this.renderer = null; this.scene = null;
     this.camera = null; this.world = null; this._meshes = null; this._seen = [];

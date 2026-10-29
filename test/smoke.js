@@ -611,8 +611,10 @@ check('render3d: layer off fills the backdrop opaque', "(function(){ var b=__dc.
 check('render3d: layer off still draws the 2D cars', "(function(){ var b=__dc.drawImage; Game.render(); return __dc.drawImage > b; })()");
 
 /* layer on -> transparent clear + no duplicate 2D world pass */
-check('render3d: layer on clears to transparent', "(function(){ Render3D._force=true; var b=__dc.clearRect; Game.render(); Render3D._force=false; return __dc.clearRect > b; })()");
-check('render3d: layer on skips the 2D cars', "(function(){ Render3D._force=true; var b=__dc.drawImage; Game.render(); Render3D._force=false; return __dc.drawImage === b; })()");
+// single canvas: the 3D frame is blitted into the game canvas with drawImage
+check('render3d: layer on composites the 3D frame into the game canvas', "(function(){ var blits=0; var fake={domElement:{width:64,height:64},getContext:function(){return {isContextLost:function(){return false;}};}}; Render3D.renderer=fake; Render3D._force=true; var orig=ctx.drawImage; ctx.drawImage=function(src){ if(src===fake.domElement) blits++; return orig.apply(ctx, arguments); }; try { Game.render(); } finally { ctx.drawImage=orig; Render3D._force=false; Render3D.renderer=null; } return blits === 1; })()");
+check('render3d: layer on skips the 2D floor and cars', "(function(){ var fake={domElement:{width:64,height:64},getContext:function(){return {isContextLost:function(){return false;}};}}; Render3D.renderer=fake; Render3D._force=true; var before=__dc.fillRect; Game.render(); Render3D._force=false; Render3D.renderer=null; return __dc.fillRect === before; })()");
+check('render3d: a failed composite falls back to the 2D frame', "(function(){ Render3D.renderer=null; Render3D._force=true; var before=__dc.fillRect; Game.render(); Render3D._force=false; return __dc.fillRect > before; })()");
 check('render3d: simulation is untouched by the render mode', "(function(){ Render3D._force=true; try { Game.render(); Game.update(0.016); } catch (e) { Render3D._force=false; return false; } Render3D._force=false; return !isNaN(Game.player.x) && !isNaN(Game.player.y) && Game.enemies.length >= 0; })()");
 
 console.log('--- touch drive path ---');
