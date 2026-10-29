@@ -189,6 +189,35 @@ along the barrel. It is **pink while you aim manually** and **cyan when the
 assist is driving it**, and the assisted target gets yellow lock brackets — so
 "the gun is stuck" and "the gun has nothing to shoot" can never look the same.
 
+## Android APK
+
+A debug APK is rebuilt and published automatically on every push to a branch
+(the workflow runs on `index.html`, `css/**`, `js/**`, `vendor/**` and
+`.github/workflows/android-apk.yml` changes):
+
+**Releases → `android-latest` → `NEON-WRECKAGE.apk`**
+
+The start screen shows a **build stamp** (`build <sha>`). The APK is stamped with
+the commit it was built from, so "am I running the new version?" is answered on
+screen instead of inferred from behaviour. `build local` means you are on the
+web version.
+
+Two silent failures made the mobile build unusable for a while, and both are now
+checked by the pipeline rather than trusted:
+
+1. **The release had stopped updating.** The publish step deleted the release and
+   re-created it; once a release existed for the tag, `gh release create`
+   refused it, the step failed, and the APK in Releases stayed put — eleven days
+   old at one point, while the tag pointed at the newest commit. Publishing is
+   now idempotent (`upload --clobber`), and a final step asserts the asset was
+   written in the last 30 minutes.
+2. **three.js was never bundled.** `prepare-web.sh` copied `css/`, `js/` and
+   `assets/` but not `vendor/`. Inside the APK the script 404'd, `THREE` was
+   undefined, the 3D layer reported itself unavailable and the game quietly ran
+   in 2D with nothing looking broken. `vendor/` is now copied, and before
+   publishing the job unzips the APK and asserts that it contains the build
+   stamp, `three.min.js` and the touch-aiming code.
+
 ## Controls
 
 | Action | Keyboard / Mouse | Touch |
