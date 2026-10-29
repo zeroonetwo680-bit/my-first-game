@@ -83,6 +83,18 @@ jobs:
             --version-code "$VERSION_CODE" --version-name "$VERSION_NAME" $SIGN_ARGS
           # adaptive launcher icons (Android 8+ crops a flat square icon)
           python3 scripts/gen-android-icons.py android/app/src/main/res
+
+          # Capacitor's template requests INTERNET for the dev-server bridge.
+          # The shipped game is fully bundled and offline, so the permission is
+          # dead weight: dropping it means the app cannot phone home even in
+          # principle, which is exactly what the privacy policy claims.
+          MANIFEST=android/app/src/main/AndroidManifest.xml
+          sed -i '/android.permission.INTERNET/d' "$MANIFEST"
+          if grep -q 'android.permission.INTERNET' "$MANIFEST"; then
+            echo "INTERNET permission is still in the manifest"; exit 1
+          fi
+          echo "--- manifest permissions ---"
+          grep -n 'uses-permission' "$MANIFEST" || echo "(none)" 
           grep -E 'versionCode|versionName' android/app/build.gradle | head -4
 
       - name: Show the SDK levels that Play will check
@@ -99,6 +111,18 @@ jobs:
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug --no-daemon
+
+      - name: Prove the APK asks for no permissions
+        run: |
+          set -euo pipefail
+          APK=android/app/build/outputs/apk/debug/app-debug.apk
+          AAPT=$(ls "$ANDROID_HOME"/build-tools/*/aapt | sort -V | tail -1)
+          "$AAPT" dump permissions "$APK" | tee /tmp/perms.txt
+          # Play shows every permission to the user; this app should have none.
+          if grep -q 'android.permission' /tmp/perms.txt; then
+            echo "unexpected permission in the packaged APK"; exit 1
+          fi
+          echo "packaged APK requests no permissions"
 
       - name: Build Play bundle (.aab)
         env:
