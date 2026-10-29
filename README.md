@@ -45,10 +45,39 @@ off all fall back to the original 2D renderer, and the adaptive quality
 governor still owns the device pixel ratio.
 
 ```bash
-node tools/render3d-test.js      # 38 checks + /tmp/3d-proof.png
+node tools/render3d-test.js      # 49 checks + /tmp/3d-proof.png
 node tools/render3d-preview.js   # software render of the real scene -> /tmp/3d-scene.png
+node tools/render3d-pipeline.js  # boots the real game on a fake renderer
 node test/smoke.js               # 104 checks, includes the degradation path
 ```
+
+`render3d-pipeline.js` is the one that answers "is the 3D actually drawing?" It
+boots the real game with an instrumented stand-in for `WebGLRenderer` and prints
+the submitted geometry:
+
+```
+active: true | #gl display: block | #game background: transparent | body.has3d: true
+world: 16 arena meshes | scene: 47 meshes, all visible
+camera (1280, 1307, 1280) near/far 26/4182
+triangles submitted: 2434 | player NDC 0.000 0.000 0.972 -> screen (640, 360)
+```
+
+If that says 2434 triangles while the screen is black, the bug is layering, not
+graphics. The HUD badge shows the same number live (`3D · 2434t`).
+
+### Cache, the bug that hides bugs
+
+The service worker used to be **cache-first for everything**, which meant a fixed
+`style.css` or `render3d.js` never reached the page — a real fix looked exactly
+like a broken one. Now:
+
+* the app shell (HTML/CSS/JS) is **network-first**, cache is only the offline fallback
+* asset URLs carry `?v=9` so a stale HTTP cache cannot answer either
+* the 3D layering is applied **inline from JS**, so a stale stylesheet cannot
+  put the opaque canvas back over the WebGL one
+* `/?fresh=1` unregisters the worker, deletes every cache and reloads
+* if the 3D layer submits zero geometry for ~0.75 s it disables itself and the
+  2D renderer takes over instead of leaving a black screen
 
 #### Black-screen lessons (all regression-tested now)
 

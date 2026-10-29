@@ -48,6 +48,9 @@ const Render3D = {
   _seen: [],
   _allCars: [],
   _force: false,          // test seam: pretend a renderer exists
+  _deadFrames: 0,
+  _lastTris: 0,
+  _ring: null,
   _t: 0,
   _dpr: 1,
 
@@ -79,6 +82,18 @@ const Render3D = {
   init(glCanvas) {
     if (this.ready || !this.available()) return false;
     try {
+      /* Some drivers behave badly when a context is created on a display:none
+         canvas, and a stale stylesheet may never have shown it. Force the
+         geometry inline first. */
+      if (glCanvas && glCanvas.style) {
+        glCanvas.style.position = 'absolute';
+        glCanvas.style.left = '0'; glCanvas.style.top = '0';
+        glCanvas.style.right = '0'; glCanvas.style.bottom = '0';
+        glCanvas.style.width = '100%'; glCanvas.style.height = '100%';
+        glCanvas.style.zIndex = '0';
+        glCanvas.style.display = 'block';
+        glCanvas.style.background = '#04060f';
+      }
       const dpr = Math.min((typeof window !== 'undefined' && window.devicePixelRatio) || 1, this.cfg.dprCap);
       this._dpr = dpr;
       const renderer = new THREE.WebGLRenderer({
@@ -646,9 +661,65 @@ const Render3D = {
     }
     this._hideShowcase();
 
+    this._applyPlayerRing(game);
+
     this._applyCamera(game);
     this.renderer.render(this.scene, this.camera);
+    this._selfCheck();
     return true;
+  },
+
+  /* Watches what the GPU actually submitted. If the scene renders nothing at
+     all for most of a second, the layer is useless, so drop back to the 2D
+     renderer instead of leaving the player looking at a black screen. */
+  _selfCheck() {
+    if (!this.renderer || !this.renderer.info) return;
+    const tris = this.renderer.info.render.triangles;
+    this._lastTris = tris;
+    this._badgeTick = (this._badgeTick || 0) + 1;
+    if (this._badgeTick % 15 === 0) this._updateBadge();
+    if (this._force) return;
+    if (tris > 0) { this._deadFrames = 0; return; }
+    this._deadFrames = (this._deadFrames || 0) + 1;
+    if (this._deadFrames > 45) {
+      this._deadFrames = 0;
+      try { console.warn('[Render3D] the 3D layer submitted no geometry; falling back to 2D'); } catch (e) {}
+      this.setEnabled(false, null);
+      try { if (typeof sync3dButton === 'function') sync3dButton(); } catch (e) {}
+    }
+  },
+
+  /* The live readout. If the screen is black but this says "3D 2434t", the GPU
+     is drawing and the problem is layering; if it says "3D 0t", the scene is
+     empty; if the badge is gone, the layer is off. One glance tells us which. */
+  _updateBadge() {
+    try {
+      const b = (typeof document !== 'undefined') && document.getElementById
+        ? document.getElementById('gl-badge') : null;
+      if (!b) return;
+      const live = this.active();
+      b.classList.toggle('live', live);
+      if (live) b.textContent = '3D \u00b7 ' + (this._lastTris || 0) + 't';
+    } catch (e) {}
+  },
+
+  /* A bright, unlit ring under the player. It depends on nothing except the
+     camera, so if this does not appear then the problem is compositing, not
+     lighting. It also reads nicely as a player marker. */
+  _applyPlayerRing(game) {
+    const p = game && game.player;
+    if (!p || p.dead) { if (this._ring) this._ring.visible = false; return; }
+    if (!this._ring) {
+      const geo = new THREE.TorusGeometry(30, 2.6, 8, 40);
+      geo.rotateX(Math.PI / 2);
+      this._ring = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+        color: 0x6ff4ff, transparent: true, opacity: 0.85, depthWrite: false
+      }));
+      this._ring.renderOrder = 3;
+      this.scene.add(this._ring);
+    }
+    this._ring.visible = true;
+    this._ring.position.set(p.x, 1.4, p.y);
   },
 
   _hideShowcase() {
@@ -684,6 +755,7 @@ const Render3D = {
         this._showFloor = g;
       }
     }
+    if (this._ring) this._ring.visible = false;   // it belongs to the arena, not the menu
     this._showCar.visible = true;
     if (this._showFloor) this._showFloor.visible = true;
     const t = this._t;
@@ -707,6 +779,7 @@ const Render3D = {
       sc.updateProjectionMatrix();
     }
     this.renderer.render(this.scene, this.camera);
+    this._selfCheck();
     return true;
   },
 
@@ -714,14 +787,32 @@ const Render3D = {
 
   setEnabled(on, game) {
     this.enabled = !!on;
-    if (this.canvas && this.canvas.style) {
-      this.canvas.style.display = this.enabled ? 'block' : 'none';
-    }
-    /* canvas#game has an opaque CSS background; while the 3D layer is live it
-       must be transparent or it paints straight over the WebGL canvas. */
+    const live = !!(this.enabled && this.ready);
+    this._deadFrames = 0;
+
+    /* LAYERING, done inline. A stylesheet can go stale in the service-worker
+       cache (that is exactly what happened), and the opaque background on
+       canvas#game then paints straight over the WebGL canvas: the player sees a
+       black screen with only the 2D FX on top. Inline styles cannot be beaten
+       by a cached CSS file, so this works whatever the stylesheet says. */
     try {
+      const gl = this.canvas;
+      if (gl && gl.style) {
+        gl.style.position = 'absolute';
+        gl.style.left = '0'; gl.style.top = '0';
+        gl.style.right = '0'; gl.style.bottom = '0';
+        gl.style.width = '100%'; gl.style.height = '100%';
+        gl.style.zIndex = '0';
+        gl.style.display = live ? 'block' : 'none';
+      }
+      const g2 = (typeof document !== 'undefined' && document.getElementById)
+        ? document.getElementById('game') : null;
+      if (g2 && g2.style) {
+        g2.style.background = live ? 'transparent' : '';
+        g2.style.zIndex = '1';
+      }
       if (typeof document !== 'undefined' && document.body && document.body.classList) {
-        document.body.classList.toggle('has3d', !!(this.enabled && this.ready));
+        document.body.classList.toggle('has3d', live);
       }
     } catch (e) {}
     if (this.enabled) {
@@ -733,6 +824,7 @@ const Render3D = {
       if (this._showFloor) { this.scene.remove(this._showFloor); this._showFloor = null; }
     }
     try { if (typeof store !== 'undefined' && store.set) store.set('nw.3d', this.enabled); } catch (e) {}
+    this._updateBadge();
     return this.enabled;
   },
 

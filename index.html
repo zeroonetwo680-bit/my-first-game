@@ -16,7 +16,30 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@500;700;900&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/style.css">
+<script>
+/* (?fresh=1) Unregister the service worker and drop every cache, then reload.
+   Added after a fix kept getting served from a stale cache, which made a real
+   bug look identical to a code bug. Now there is one URL that always wins. */
+(function () {
+  try {
+    if (!/[?&]fresh=1/.test(location.search)) return;
+    var done = function () {
+      if (window.caches && caches.keys) {
+        caches.keys()
+          .then(function (keys) { return Promise.all(keys.map(function (k) { return caches.delete(k); })); })
+          .then(function () { location.replace(location.pathname); })
+          .catch(function () { location.replace(location.pathname); });
+      } else { location.replace(location.pathname); }
+    };
+    if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+      navigator.serviceWorker.getRegistrations()
+        .then(function (rs) { return Promise.all(rs.map(function (r) { return r.unregister(); })); })
+        .then(done).catch(done);
+    } else { done(); }
+  } catch (e) {}
+})();
+</script>
+<link rel="stylesheet" href="css/style.css?v=9">
 </head>
 <body>
 <div id="app">
@@ -168,8 +191,8 @@
 <script src="js/input.js"></script>
 <script src="js/platform.js"></script>
 <script src="vendor/three.min.js"></script>
-<script src="js/render3d.js"></script>
-<script src="js/game.js"></script>
+<script src="js/render3d.js?v=9"></script>
+<script src="js/game.js?v=9"></script>
 <script>
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', function () {

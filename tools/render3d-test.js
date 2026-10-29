@@ -205,6 +205,52 @@ ok('setEnabled toggles the has3d body class', (function () {
   return on === true && off === false;
 })());
 
+/* ---------------- layering is enforced inline, not by CSS ---------------- */
+console.log('\n--- inline layering (immune to a stale stylesheet) ---');
+(() => {
+  const glEl = sandbox.document.getElementById('gl');
+  const gameEl = sandbox.document.getElementById('game');
+  Render3D.canvas = glEl;
+  Render3D.ready = true;
+
+  Render3D.setEnabled(true, null);
+  ok('3D on: #gl is positioned and visible inline', glEl.style.display === 'block' && glEl.style.zIndex === '0' && glEl.style.width === '100%');
+  ok('3D on: #game background is cleared inline', gameEl.style.background === 'transparent');
+  ok('3D on: body.has3d is set too (belt and braces)', sandbox.document.body.classList.contains('has3d'));
+
+  Render3D.setEnabled(false, null);
+  ok('3D off: #gl is hidden inline', glEl.style.display === 'none');
+  ok('3D off: #game keeps its own background', gameEl.style.background === '');
+  ok('3D off: body.has3d is removed', !sandbox.document.body.classList.contains('has3d'));
+})();
+
+/* ---------------- it gives up on itself instead of showing a black screen --- */
+console.log('\n--- dead-frame self check ---');
+(() => {
+  Render3D.ready = true;
+  Render3D.enabled = true;
+  Render3D.renderer = { info: { render: { triangles: 0 } } };
+  for (let i = 0; i < 50; i++) Render3D._selfCheck();
+  ok('a layer that submits no geometry falls back to 2D', Render3D.enabled === false && Render3D.ready === true);
+
+  Render3D.enabled = true;
+  Render3D.renderer = { info: { render: { triangles: 1200 } } };
+  Render3D._deadFrames = 40;
+  Render3D._selfCheck();
+  ok('a layer that draws geometry is left alone', Render3D.enabled === true && Render3D._deadFrames === 0);
+  Render3D.renderer = null;
+})();
+
+/* ---------------- the player marker ---------------- */
+(() => {
+  const p = { x: 700, y: 900, dead: false, angle: 0 };
+  Render3D._applyPlayerRing({ player: p });
+  ok('a player ring is created and placed on the deck', !!Render3D._ring && Render3D._ring.position.x === 700 && Math.abs(Render3D._ring.position.z - 900) < 1e-6);
+  ok('the ring is unlit (independent of the lighting setup)', Render3D._ring.material.type === 'MeshBasicMaterial');
+  Render3D._applyPlayerRing({ player: { x: 0, y: 0, dead: true } });
+  ok('the ring hides when the player dies', Render3D._ring.visible === false);
+})();
+
 /* ---------------- camera projection = the critical property ---------------- */
 const VW = 1280, VH = 720;
 Render3D._vw = VW; Render3D._vh = VH;
