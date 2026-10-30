@@ -159,4 +159,29 @@ Game.player.deadT = 0.9;
 `);
 shot('05-game-over');
 
+/* -------------------------------------------------- muzzle close-up --- */
+run(`
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.equipWeapon('ruler');
+var p = Game.player; p.x = 520; p.y = 470; p.aim = -0.45;
+Game.toast = 0;
+Input.mouse.x = 900; Input.mouse.y = 300;
+p.fireCd = 0; Game.fire();
+for (var i = 0; i < 2; i++) Game.update(1 / 60);
+`);
+shot('08-muzzle-line');
+
+run(`
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.equipWeapon('eraser');
+var p = Game.player; p.x = 520; p.y = 470; p.aim = -0.45;
+Game.toast = 0;
+Input.mouse.x = 900; Input.mouse.y = 300;
+p.fireCd = 0; Game.fire();
+for (var i = 0; i < 3; i++) Game.update(1 / 60);
+`);
+shot('09-muzzle-eraser');
+
 console.log('\nframes in', OUT);

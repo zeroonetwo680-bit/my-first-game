@@ -500,6 +500,68 @@ Game.reset('playing'); Game.startRun();
 [Game.player.weapon, Game.pickups.length].join(',')
 `, v => v === 'pen,0');
 
+console.log('--- the shot leaves the gun ---');
+check('a bullet is born on the weapon, not in the body', `
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.player.x = 640; Game.player.y = 460;
+Game.player.aim = 0;
+Game.bullets.length = 0; Game.player.fireCd = 0;
+var m = Game.muzzlePoint();
+Game.fire();
+var b = Game.bullets[0];
+dist(b.x, b.y, m.x, m.y) < 0.001
+`, v => v === true);
+
+check('the muzzle is in front of the body, along the aim', `
+Game.reset('playing'); Game.startRun();
+Game.player.x = 640; Game.player.y = 460; Game.player.aim = 0;
+var m = Game.muzzlePoint();
+m.x > Game.player.x + 30
+`, v => v === true);
+
+check('the muzzle follows the aim direction', `
+Game.reset('playing'); Game.startRun();
+Game.player.x = 640; Game.player.y = 460;
+/* the muzzle lives at the shoulder, so compare the two aim directions with
+ * each other rather than with the feet */
+Game.player.aim = Math.PI / 2;   // aim down the page
+var down = Game.muzzlePoint().y;
+Game.player.aim = -Math.PI / 2;  // aim up the page
+var up = Game.muzzlePoint().y;
+down > up + 20
+`, v => v === true);
+
+check('the muzzle is not the same point for every weapon', `
+Game.reset('playing'); Game.startRun();
+Game.player.x = 640; Game.player.y = 460; Game.player.aim = 0;
+var pen = Game.muzzlePoint();
+Game.equipWeapon('ruler');
+var ruler = Game.muzzlePoint();
+Math.abs(ruler.x - pen.x) > 4
+`, v => v === true);
+
+check('the drawn tool ends where the bullets start', `
+Game.reset('playing'); Game.startRun();
+Game.player.x = 640; Game.player.y = 460; Game.player.aim = 0;
+var m = Game.muzzlePoint(Game.playerPose(), 'ruler', 0);
+var w = Game.WEAPONS.ruler;
+var tipX = m.x - Math.cos(0) * w.reach * m.scale + Math.cos(0) * w.reach * m.scale;
+Math.abs(tipX - m.x) < 0.001 && m.scale > 0
+`, v => v === true);
+
+check('a thrower throws from its hand, not its chest', `
+Game.reset('playing'); Game.startRun();
+Game.enemies.length = 0; Game.pending.length = 0; Game.shots.length = 0;
+var e = Game.spawnEnemy('thrower', Game.player.x + 200, Game.player.y);
+e.throwCd = 0;
+Game.updateEnemies(0.016);
+var shot = Game.shots[0];
+var ePose = Rig.pose({ x: e.x, y: e.y, size: e.size, phase: e.phase, gait: e.gait || 0, t: Game.t, seed: e.seed, aim: angleTo(e.x, e.y - e.size * 0.3, Game.player.x, Game.player.y) });
+var hand = ePose.armPairs[0].right.hand;
+dist(shot.x, shot.y, hand.x, hand.y) < 20 && dist(shot.x, shot.y, e.x, e.y - e.size * 0.3) > 20
+`, v => v === true);
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();

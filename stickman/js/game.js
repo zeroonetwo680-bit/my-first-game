@@ -60,27 +60,27 @@ var Game = {
     pen: {
       name: 'PEN', tip: 'One clean line. Never runs out.',
       shots: 1, spread: 0, rate: 0.135, dmg: 11, speed: 980, life: 1.1,
-      r: 3, len: 13, pierce: 0, ammo: Infinity, kick: 26, drop: 0
+      r: 3, len: 13, pierce: 0, ammo: Infinity, kick: 26, drop: 0, reach: 13, tip: 11
     },
     ruler: {
       name: 'RULER', tip: 'Three hard slugs in a cone.',
       shots: 3, spread: 0.20, rate: 0.40, dmg: 16, speed: 820, life: 0.46,
-      r: 6, len: 21, pierce: 0, ammo: 24, kick: 130, drop: 0.5
+      r: 6, len: 21, pierce: 0, ammo: 24, kick: 130, drop: 0.5, reach: 20, tip: 14
     },
     compass: {
       name: 'COMPASS', tip: 'A needle that goes through everything.',
       shots: 1, spread: 0, rate: 0.34, dmg: 24, speed: 1500, life: 1.0,
-      r: 2.5, len: 26, pierce: 3, ammo: 12, kick: 90, drop: 0.65
+      r: 2.5, len: 26, pierce: 3, ammo: 12, kick: 90, drop: 0.65, reach: 13, tip: 11
     },
     stapler: {
       name: 'STAPLER', tip: 'Fast, mean, and very short range.',
       shots: 1, spread: 0.10, rate: 0.065, dmg: 5, speed: 1250, life: 0.42,
-      r: 2, len: 8, pierce: 0, ammo: 80, kick: 12, drop: 0.9
+      r: 2, len: 8, pierce: 0, ammo: 80, kick: 12, drop: 0.9, reach: 10, tip: 10
     },
     eraser: {
       name: 'ERASER', tip: 'Slow and heavy. It ricochets off the margin.',
       shots: 1, spread: 0, rate: 0.60, dmg: 42, speed: 640, life: 1.6,
-      r: 11, len: 0, pierce: 0, ammo: 8, kick: 240, bounce: 2, drop: 0.4
+      r: 11, len: 0, pierce: 0, ammo: 8, kick: 240, bounce: 2, drop: 0.4, reach: 10, tip: 9
     }
   },
   WEAPON_IDS: ['ruler', 'compass', 'stapler', 'eraser'],
@@ -408,13 +408,14 @@ var Game = {
     /* six arms triples the shots; the spread stays in the weapon's hands */
     var volley = w.shots * (this.powers.arms ? 3 : 1);
     var spread = w.spread;
-    var muzzleX = p.x + Math.cos(p.aim) * 26;
-    var muzzleY = p.y - p.size * 0.30 + Math.sin(p.aim) * 26;
+    /* the bullet leaves the end of the weapon, read off the very pose the
+     * figure is drawn in this frame */
+    var muzzle = this.muzzlePoint();
 
     for (var i = 0; i < volley; i++) {
       var a = p.aim + (volley === 1 ? 0 : (i - (volley - 1) / 2) * spread);
       this.bullets.push({
-        x: muzzleX, y: muzzleY,
+        x: muzzle.x, y: muzzle.y,
         vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed,
         life: w.life, dmg: w.dmg, r: w.r, a: a,
         w: p.weapon, len: w.len,
@@ -536,8 +537,17 @@ var Game = {
         if (e.throwCd <= 0 && d < 520) {
           e.throwCd = 2.2;
           var ba = angleTo(e.x, e.y - e.size * 0.3, p.x, p.y);
+          /* the thrown stone also leaves the thrower's hand, not its chest */
+          var ePose = Rig.pose({
+            x: e.x, y: e.y, size: e.size, phase: e.phase, gait: e.gait || 0,
+            t: this.t, seed: e.seed, aim: ba
+          });
+          var eHand = ePose.armPairs[0].right.hand;
+          var eScale = Math.max(0.4, e.size / 132);
+          var hx = eHand.x + Math.cos(ba) * 6 * eScale;
+          var hy = eHand.y + Math.sin(ba) * 6 * eScale;
           this.shots.push({
-            x: e.x + Math.cos(ba) * 14, y: e.y - e.size * 0.3 + Math.sin(ba) * 14,
+            x: hx, y: hy,
             vx: Math.cos(ba) * 300, vy: Math.sin(ba) * 300, life: 3, r: 7, dmg: 9
           });
           Sfx.hit();
@@ -1090,21 +1100,25 @@ var Game = {
   /* The weapon lives in the stickman's aiming hand, at the same angle as the
    * arm, so the muzzle and the bullets agree. */
   drawHeldWeapon: function (ctx, pose, id, aim) {
-    var hand = pose.armPairs[0].right.hand;
-    var scale = pose.size / 132;
-    var px = hand.x + Math.cos(aim) * 4 * scale;
-    var py = hand.y + Math.sin(aim) * 4 * scale;
-    this.drawTool(ctx, id, px, py, Math.max(0.55, scale * 1.15), aim);
+    var m = this.muzzlePoint(pose, id, aim);
+    var def = this.WEAPONS[id] || this.WEAPONS.pen;
+    var artScale = Math.max(0.55, m.scale * 1.15);
+    /* Anchor the art by its TIP, not by its middle: the weapon is drawn so
+     * that the point the bullets leave from is exactly the point the tool
+     * ends at. Otherwise the muzzle floats a few pixels off the barrel and
+     * the shot looks like it comes from nowhere. */
+    var tip = def.tip || 11;
+    var grip = { x: m.x - Math.cos(aim) * tip * artScale,
+                 y: m.y - Math.sin(aim) * tip * artScale };
+    this.drawTool(ctx, id, grip.x, grip.y, artScale, aim);
 
     /* muzzle puff, a couple of frames after a shot */
     if (this.player.muzzle > 0) {
       ctx.save();
       ctx.globalAlpha = clamp(this.player.muzzle * 10, 0, 1) * 0.8;
       ctx.fillStyle = 'rgba(30,30,34,0.75)';
-      var mx = px + Math.cos(aim) * (id === 'ruler' ? 22 : 16) * scale;
-      var my = py + Math.sin(aim) * (id === 'ruler' ? 22 : 16) * scale;
       ctx.beginPath();
-      ctx.arc(mx, my, (id === 'eraser' ? 9 : 4.5) * scale, 0, TAU);
+      ctx.arc(m.x, m.y, (id === 'eraser' ? 9 : 4.5) * artScale, 0, TAU);
       ctx.fill();
       ctx.restore();
     }
@@ -1140,10 +1154,12 @@ var Game = {
     }
   },
 
-  drawPlayer: function (ctx) {
+  /* The one pose the player is drawn in. Firing reads its muzzle out of this
+   * same pose, so the bullet always leaves the end of the weapon and never the
+   * middle of the body. */
+  playerPose: function () {
     var p = this.player;
-    if (!p) return;
-    var pose = Rig.pose({
+    return Rig.pose({
       x: p.x, y: p.y, size: p.size,
       phase: p.phase, gait: p.gait,
       t: this.t, seed: 7, aim: p.aim,
@@ -1152,6 +1168,31 @@ var Game = {
       crouch: p.dead ? 1 : (p.dashT > 0 ? 0.4 : 0),
       lean: clamp(p.vx / 900, -0.5, 0.5)
     });
+  },
+
+  /* Where the weapon ends: the aiming hand, pushed out by the tool's own
+   * length, scaled with the figure. */
+  muzzlePoint: function (pose, weaponId, aim) {
+    var p = this.player;
+    pose = pose || this.playerPose();
+    var id = weaponId || p.weapon;
+    aim = aim === undefined ? p.aim : aim;
+    var hand = pose.armPairs[0].right.hand;
+    var scale = Math.max(0.4, pose.size / 132);
+    var reach = (this.WEAPONS[id] || this.WEAPONS.pen).reach || 12;
+    var d = reach * scale;
+    return {
+      x: hand.x + Math.cos(aim) * d,
+      y: hand.y + Math.sin(aim) * d,
+      hand: hand,
+      scale: scale
+    };
+  },
+
+  drawPlayer: function (ctx) {
+    var p = this.player;
+    if (!p) return;
+    var pose = this.playerPose();
     if (p.dead) {
       ctx.save();
       ctx.globalAlpha = 0.75;
