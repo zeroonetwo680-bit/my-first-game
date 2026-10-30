@@ -34,3 +34,31 @@ noscript p {
   color: #d9d0c2;
   font: 600 16px ui-monospace, Menlo, monospace;
 }
+
+
+/* Dedicated close-combat buttons leave the two touch sticks usable. */
+#melee-controls { display: none; }
+@media (pointer: coarse) {
+  #melee-controls:not([hidden]) {
+    position: fixed;
+    bottom: max(12px, env(safe-area-inset-bottom));
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    z-index: 2;
+    touch-action: manipulation;
+  }
+  #melee-controls button {
+    min-width: 70px;
+    min-height: 44px;
+    padding: 8px;
+    border: 1px solid #544c43;
+    border-radius: 5px;
+    color: #232124;
+    background: rgba(246,243,235,0.92);
+    font: bold 11px ui-monospace, monospace;
+    touch-action: manipulation;
+  }
+  #melee-controls button:active { background: #e5cbc8; }
+}

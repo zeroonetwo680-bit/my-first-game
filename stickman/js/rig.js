@@ -15,7 +15,7 @@ var Rig = (function () {
     return hash1(seed * 12.9898 + frame * 3.137 + i * 7.77) * amt;
   }
 
-  var JITTER = 1.15;
+  var JITTER = 0.65;
 
   function pose(o) {
     var size = o.size || 60;
@@ -43,7 +43,7 @@ var Rig = (function () {
     /* the caller gives us the point on the floor the figure stands on */
     var hipX = (o.x || 0) + lean;
     var hipY = (o.y || 0) + bob - (legUp + legLow) * 0.97;
-    var shoulderX = hipX + lean * 0.45;
+    var shoulderX = hipX + lean * 0.45 + Math.sin(phase) * size * 0.015 * gait;
     var shoulderY = hipY - torso * 0.96;
     var neckX = hipX + lean * 0.7;
     var neckY = hipY - torso;
@@ -99,7 +99,7 @@ var Rig = (function () {
       } else if (p2 === 0) {
         /* the main pair aims; the second arm hangs out of the way */
         rightAng = aim + fan;
-        leftAng = aim - fan;
+        leftAng = aim + 0.38 - fan;
       } else {
         rightAng = aim + fan;
         leftAng = aim - fan;
@@ -119,6 +119,40 @@ var Rig = (function () {
         };
       }
       armPairs.push({ left: arm2(leftAng, bendL), right: arm2(rightAng, bendR), sy: sy });
+    }
+
+    // Each attack has wind-up, extension and recovery. Animate actual joints
+    // rather than moving a flat sprite, so the punch, kick and sword read.
+    var attack = o.attack;
+    if (attack) {
+      var progress = clamp(attack.time / attack.duration, 0, 1);
+      var power = Math.sin(Math.PI * progress);
+      var dir = attack.aim;
+      var main = armPairs[0].right;
+      if (attack.move === 'sword') {
+        var swing = dir - 1.15 + 2.30 * progress;
+        main.elbow.x = shoulderX + Math.cos(swing) * armUp;
+        main.elbow.y = shoulderY + Math.sin(swing) * armUp;
+        main.hand.x = shoulderX + Math.cos(swing) * (armUp + armLow);
+        main.hand.y = shoulderY + Math.sin(swing) * (armUp + armLow);
+      } else if (attack.move === 'punch') {
+        var reach = size * (0.34 + 0.24 * power);
+        main.elbow.x = shoulderX + Math.cos(dir) * reach * 0.5;
+        main.elbow.y = shoulderY + Math.sin(dir) * reach * 0.5;
+        main.hand.x = shoulderX + Math.cos(dir) * reach;
+        main.hand.y = shoulderY + Math.sin(dir) * reach;
+      } else if (attack.move === 'kick') {
+        // The planted leg stays underneath; the other extends from the hip.
+        var kickReach = size * 0.49;
+        legR.knee.x = lerp(legR.knee.x, hipX + Math.cos(dir) * kickReach * 0.52, power);
+        legR.knee.y = lerp(legR.knee.y, hipY + Math.sin(dir) * kickReach * 0.52, power);
+        legR.foot.x = lerp(legR.foot.x, hipX + Math.cos(dir) * kickReach, power);
+        legR.foot.y = lerp(legR.foot.y, hipY + Math.sin(dir) * kickReach, power);
+        main.elbow.x = shoulderX - Math.cos(dir) * armUp * 0.5;
+        main.elbow.y = shoulderY - size * 0.10;
+        main.hand.x = shoulderX - Math.cos(dir) * size * 0.20;
+        main.hand.y = shoulderY - size * 0.19;
+      }
     }
 
     /* wobble every joint a little, consistently within one "frame" */

@@ -197,4 +197,20 @@ Input.mouse.down = false;
 `);
 shot('10-first-shot');
 
+/* Close-combat action frames, with a live opponent in striking range. */
+for (const move of ['punch', 'kick', 'sword']) {
+  sandbox.__move = move;
+  run(`
+    Game.reset('playing'); Game.startRun();
+    Game.pending.length = 0; Game.enemies.length = 0;
+    Game.banner = 0; Game.player.x = 500; Game.player.y = 460; Game.player.aim = 0;
+    Input.mouse.x = 1000; Input.mouse.y = 460; Input.mouse.down = false;
+    var foe = Game.spawnEnemy('brute', __move === 'sword' ? 640 : 600, 460); foe.hp = 250; foe.maxhp = 250;
+    if (__move === 'kick') { Game.player.comboTimer = 1; Game.player.comboStep = 1; }
+    Game.startMelee(__move === 'sword' ? 'sword' : 'kungfu');
+    Game.updateMelee(Game.player.attack.duration * 0.46);
+  `);
+  shot('11-combat-' + move);
+}
+
 console.log('\nframes in', OUT);

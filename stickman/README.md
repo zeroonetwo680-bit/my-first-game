@@ -37,8 +37,19 @@ science fiction, the line under it is the science.
 | Move | `W A S D` or arrows | drag the left half |
 | Aim and fire | mouse, hold left button | drag the right half |
 | Dash | `Shift` or right click | (see roadmap) |
+| Kung fu | `E` (press twice for punch → kick) | KUNG FU button |
+| Sword | `F` | SWORD button |
 | Pick up | walk over the tool | walk over the tool |
 | Pause / sound | `P` / `M` | — |
+
+## Close combat
+
+Aim toward an enemy and press **E** for a punch; press it again for a kick.
+Fast second presses are buffered until the first strike finishes. Press **F**
+for a sweeping sword slash that can hit multiple enemies in front. Each strike
+has a wind-up, a single damage frame and recovery. The sword is always available
+and the equipped ranged weapon returns after the attack. On touch devices, use
+the on-screen KUNG FU and SWORD buttons.
 
 ## Weapons — the page's own stationery
 
@@ -79,7 +90,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 67 checks: rig, combat, weapons, muzzle, powers, 2 minutes
+node test/smoke.js        # 74 checks: rig, melee, weapons, muzzle, powers, 2 minutes
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

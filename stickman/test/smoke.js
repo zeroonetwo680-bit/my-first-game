@@ -180,7 +180,7 @@ var e = Game.spawnEnemy('walker', Game.player.x + 120, Game.player.y);
 var before = Game.score;
 Game.hurtEnemy(e, 999, 0);
 [Game.score > before, e.dead, Game.combo >= 1].join(',')
-`, v => 'true,true,true');
+`, v => v === 'true,true,true');
 
 check('a kill raises the combo multiplier', `
 Game.reset('playing'); Game.startRun();
@@ -198,7 +198,7 @@ Game.damagePlayer(15, 0, 0);
 var hp = Game.player.hp;
 Game.damagePlayer(15, 0, 0);
 [hp < 100, Game.player.iframes > 0, Game.player.hp === hp].join(',')
-`, v => 'true,true,true');
+`, v => v === 'true,true,true');
 
 check('a hit breaks the combo', `
 Game.reset('playing'); Game.startRun();
@@ -638,6 +638,71 @@ Sfx.shootFor = old; Sfx.shoot = oldShoot;
 ok
 `, v => v === true);
 
+console.log('--- close combat ---');
+check('punch hits a nearby enemy only after the active frame', `
+Game.reset('playing'); Game.startRun(); Game.pending.length = 0; Game.enemies.length = 0;
+var p = Game.player; p.aim = 0;
+var e = Game.spawnEnemy('brute', p.x + 90, p.y); var hp = e.hp;
+Game.startMelee('kungfu'); Game.updateMelee(0.05); var before = e.hp;
+Game.updateMelee(0.08); var after = e.hp; Game.updateMelee(0.05);
+before === hp && after === hp - 18 && e.hp === after
+`, v => v === true);
+
+check('attacks do not hit enemies behind or outside their reach', `
+Game.reset('playing'); Game.startRun(); Game.enemies.length = 0;
+var p = Game.player; p.aim = 0;
+var behind = Game.spawnEnemy('brute', p.x - 80, p.y);
+var far = Game.spawnEnemy('brute', p.x + 300, p.y);
+Game.startMelee('sword'); Game.updateMelee(0.2);
+behind.hp === behind.maxhp && far.hp === far.maxhp
+`, v => v === true);
+
+check('sword strikes multiple enemies in front once', `
+Game.reset('playing'); Game.startRun(); Game.enemies.length = 0;
+var p = Game.player; p.aim = 0;
+var a = Game.spawnEnemy('brute', p.x + 110, p.y + 25);
+var b = Game.spawnEnemy('brute', p.x + 110, p.y - 25);
+Game.startMelee('sword'); Game.updateMelee(0.2); Game.updateMelee(0.1);
+a.hp === a.maxhp - 38 && b.hp === b.maxhp - 38
+`, v => v === true);
+
+check('two quick kung fu presses buffer a kick after the punch', `
+Game.reset('playing'); Game.startRun(); Game.enemies.length = 0;
+var p = Game.player; Game.startMelee('kungfu');
+var first = p.attack.move; Game.startMelee('kungfu');
+for (var i = 0; i < 50; i++) Game.updatePlayer(1/120);
+first === 'punch' && p.attack && p.attack.move === 'kick'
+`, v => v === true);
+
+check('combo expires to a punch and attacks cannot start while paused', `
+Game.reset('playing'); Game.startRun(); Game.enemies.length = 0;
+var p = Game.player; p.comboStep = 1; p.comboTimer = 0;
+Game.state = 'paused'; var blocked = !Game.startMelee('kungfu');
+Game.state = 'playing'; Game.startMelee('kungfu');
+blocked && p.attack.move === 'punch'
+`, v => v === true);
+
+check('melee temporarily blocks firing without discarding equipped gun', `
+Game.reset('playing'); Game.startRun(); Game.enemies.length = 0; Game.equipWeapon('ruler');
+var p = Game.player; Input.mouse.down = true; p.fireCd = 0;
+Game.startMelee('sword'); Game.updatePlayer(0.02);
+var during = Game.bullets.length;
+for (var i = 0; i < 70; i++) Game.updatePlayer(1/120);
+Input.mouse.down = false;
+during === 0 && p.weapon === 'ruler' && Game.bullets.length > 0
+`, v => v === true);
+
+check('kick pose extends the leg and sword pose swings across frames', `
+Game.reset('playing'); Game.startRun(); var p = Game.player; p.aim = 0;
+Game.startMelee('kungfu'); p.attack.move = 'kick';
+p.attack.time = 0; var rest = Game.playerPose();
+p.attack.time = p.attack.duration/2; var kick = Game.playerPose();
+p.attack.move = 'sword'; p.attack.time = 0; var windup = Game.playerPose();
+p.attack.time = p.attack.duration; var finish = Game.playerPose();
+kick.legR.foot.x > rest.legR.foot.x + 30 &&
+  Math.abs(windup.armPairs[0].right.hand.y - finish.armPairs[0].right.hand.y) > 30
+`, v => v === true);
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();
@@ -675,7 +740,7 @@ try {
   }
 } catch (e) { err = e.message; }
 [err === null, frames === 7200, Game.enemies.length < 60].join(',')
-`, v => 'true,true,true');
+`, v => v === 'true,true,true');
 
 check('enemy count never runs away', 'Game.enemies.length', n => n < 60);
 

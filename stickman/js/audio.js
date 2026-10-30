@@ -74,6 +74,7 @@ var Sfx = (function () {
       else if (weapon === 'eraser') { tone(150, 0.16, 'sine', 0.18, 70); noise(0.12, 0.12, 400); }
       else { tone(660, 0.05, 'square', 0.10, 320); }
     },
+    swing: function (move) { noise(move === 'sword' ? 0.12 : 0.08, 0.08, move === 'sword' ? 2200 : 1000); },
     hit: function () { noise(0.06, 0.16, 900); },
     kill: function () { tone(190, 0.16, 'sawtooth', 0.16, 60); noise(0.12, 0.14, 700); },
     hurt: function () { tone(140, 0.22, 'sawtooth', 0.26, 55); },

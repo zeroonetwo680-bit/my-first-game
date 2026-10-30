@@ -83,6 +83,8 @@
     }
     if (Game.state === 'playing') {
       if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'KeyK') Game.dash();
+      if (code === 'KeyE') Game.startMelee('kungfu');
+      if (code === 'KeyF') Game.startMelee('sword');
     }
   }
 
@@ -191,6 +193,19 @@
   window.addEventListener('resize', resize);
   if (window.visualViewport) window.visualViewport.addEventListener('resize', resize);
 
+  // Buttons sit above the canvas, so they do not steal either touch stick.
+  var meleeControls = document.getElementById('melee-controls');
+  function bindMeleeButton(id, kind) {
+    var button = document.getElementById(id);
+    if (!button) return;
+    button.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); e.stopPropagation();
+      Sfx.unlock(); Game.startMelee(kind);
+    });
+  }
+  bindMeleeButton('kungfu-button', 'kungfu');
+  bindMeleeButton('sword-button', 'sword');
+
   /* --------------------------------------------------------------- boot --- */
   Game.init(canvas);
   resize();
@@ -214,6 +229,7 @@
     }
     if (guard >= 8) acc = 0;
     Game.render();
+    if (meleeControls) meleeControls.hidden = Game.state !== 'playing';
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

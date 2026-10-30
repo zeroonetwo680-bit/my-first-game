@@ -188,7 +188,8 @@ var Game = {
       fireCd: 0, dashCd: 0, dashT: 0, iframes: 0, hurtT: 0,
       arms: 1, powerCd: 0, regenT: 0, dead: false, deadT: 0,
       facing: 1, walkT: 0,
-      weapon: 'pen', ammo: Infinity, muzzle: 0
+      weapon: 'pen', ammo: Infinity, muzzle: 0,
+      attack: null, meleeCd: 0, queuedMelee: null, comboStep: 0, comboTimer: 0
     };
     this.nextWave();
     return this.player;
@@ -370,6 +371,9 @@ var Game = {
 
     /* timers */
     p.fireCd -= dt; p.dashCd -= dt; p.iframes -= dt; p.hurtT -= dt;
+    p.meleeCd = Math.max(0, p.meleeCd - dt);
+    p.comboTimer = Math.max(0, p.comboTimer - dt);
+    this.updateMelee(dt);
     p.muzzle = Math.max(0, p.muzzle - dt);
     p.regenT += dt;
     if (this.powers.heart) {
@@ -392,7 +396,58 @@ var Game = {
     /* firing: hold to spray */
     var wantFire = Input.mouse.down || Input.down('Space') || Input.hit('KeyJ') ||
       (Input.touch.active && Input.touch.aimId !== -1);
-    if (wantFire && p.fireCd <= 0) this.fire();
+    if (wantFire && p.fireCd <= 0 && !p.attack) this.fire();
+  },
+
+  // Close combat is independent of the equipped ranged weapon. Each press
+  // starts one committed attack; a timed active frame applies damage once.
+  startMelee: function (kind) {
+    var p = this.player;
+    if (this.state !== 'playing' || !p || p.dead) return false;
+    if (kind !== 'kungfu' && kind !== 'sword') return false;
+    if (p.meleeCd > 0 || p.attack) { p.queuedMelee = kind; return true; }
+    var move = kind === 'sword' ? 'sword' : (p.comboTimer > 0 && p.comboStep === 1 ? 'kick' : 'punch');
+    if (kind === 'kungfu') {
+      p.comboStep = move === 'punch' ? 1 : 0;
+      p.comboTimer = 1.1;
+    }
+    var duration = move === 'sword' ? 0.46 : (move === 'kick' ? 0.43 : 0.32);
+    p.attack = { move: move, aim: p.aim, time: 0, duration: duration, hit: false };
+    p.meleeCd = duration + 0.05;
+    p.muzzle = 0;
+    p.vx += Math.cos(p.aim) * (move === 'kick' ? 105 : 55);
+    p.vy += Math.sin(p.aim) * (move === 'kick' ? 105 : 55);
+    if (typeof Sfx.swing === 'function') Sfx.swing(move);
+    return true;
+  },
+
+  updateMelee: function (dt) {
+    var p = this.player, a = p && p.attack;
+    if (!p) return;
+    if (!a) {
+      if (p.queuedMelee && p.meleeCd <= 0) {
+        var next = p.queuedMelee; p.queuedMelee = null; this.startMelee(next);
+      }
+      return;
+    }
+    a.time += dt;
+    var progress = a.time / a.duration;
+    if (!a.hit && progress >= 0.36) {
+      a.hit = true;
+      var reach = a.move === 'sword' ? 140 : (a.move === 'kick' ? 80 : 90);
+      var damage = a.move === 'sword' ? 38 : (a.move === 'kick' ? 30 : 18);
+      var halfArc = a.move === 'sword' ? 1.15 : 0.68;
+      for (var i = 0; i < this.enemies.length; i++) {
+        var e = this.enemies[i];
+        if (e.dead) continue;
+        var dx = e.x - p.x, dy = e.y - p.y;
+        var distance = Math.hypot(dx, dy);
+        if (distance > reach + e.r || (distance > e.r && Math.abs(angleDelta(a.aim, Math.atan2(dy, dx))) > halfArc)) continue;
+        this.hurtEnemy(e, damage, a.aim);
+        this.shake = Math.max(this.shake, a.move === 'sword' ? 5 : 3);
+      }
+    }
+    if (progress >= 1) p.attack = null;
   },
 
   weaponDef: function () {
@@ -1176,7 +1231,8 @@ var Game = {
       arms: this.powers.arms ? 3 : 1,
       aimSpreads: this.powers.arms ? [0, 0.62, -0.62] : [0],
       crouch: p.dead ? 1 : (p.dashT > 0 ? 0.4 : 0),
-      lean: clamp(p.vx / 900, -0.5, 0.5)
+      lean: clamp(p.vx / 900, -0.5, 0.5),
+      attack: p.attack
     });
   },
 
@@ -1221,9 +1277,57 @@ var Game = {
       alpha: p.iframes > 0 ? 0.62 + Math.sin(this.t * 40) * 0.25 : 1,
       face: true
     });
-    // Draw over the arm so the weapon remains visible even when aiming down.
-    // Keep the last weapon visible for its flash even if its clip just ran out.
-    this.drawHeldWeapon(ctx, pose, p.muzzle > 0 && p.muzzleWeapon ? p.muzzleWeapon : p.weapon, p.aim);
+    if (p.attack) {
+      this.drawMelee(ctx, pose, p.attack);
+    } else {
+      // Draw over the arm so the weapon remains visible even when aiming down.
+      this.drawHeldWeapon(ctx, pose, p.muzzle > 0 && p.muzzleWeapon ? p.muzzleWeapon : p.weapon, p.aim);
+    }
+  },
+
+  drawMelee: function (ctx, pose, attack) {
+    var t = clamp(attack.time / attack.duration, 0, 1);
+    var hand = pose.armPairs[0].right.hand;
+    var a = attack.aim;
+    ctx.save();
+    if (attack.move === 'sword') {
+      var swordAngle = a - 1.15 + 2.30 * t;
+      ctx.translate(hand.x, hand.y);
+      ctx.rotate(swordAngle);
+      // A long silver blade and a red-wrapped hilt, both attached to the hand.
+      ctx.lineCap = 'round';
+      ctx.strokeStyle = '#22242a'; ctx.lineWidth = 5;
+      ctx.beginPath(); ctx.moveTo(-11, 0); ctx.lineTo(8, 0); ctx.stroke();
+      ctx.strokeStyle = '#c82e32'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(-8, 0); ctx.lineTo(1, 0); ctx.stroke();
+      ctx.strokeStyle = '#292a2c'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.moveTo(7, -9); ctx.lineTo(7, 9); ctx.stroke();
+      ctx.fillStyle = '#faf9f2'; ctx.strokeStyle = '#31343a'; ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.moveTo(8, -4); ctx.lineTo(65, -3);
+      ctx.lineTo(78, 0); ctx.lineTo(65, 3); ctx.lineTo(8, 4); ctx.closePath();
+      ctx.fill(); ctx.stroke();
+      ctx.restore();
+      if (t > 0.25 && t < 0.8) {
+        ctx.save();
+        ctx.globalAlpha = Math.sin((t - 0.25) / 0.55 * Math.PI) * 0.6;
+        ctx.strokeStyle = '#c62b30'; ctx.lineWidth = 4; ctx.lineCap = 'round';
+        ctx.beginPath(); ctx.arc(pose.shoulder.x, pose.shoulder.y, pose.size * 0.78,
+          a - 1.15, a - 1.15 + 2.30 * t); ctx.stroke();
+        ctx.restore();
+      }
+      return;
+    }
+    // Small ink speed strokes make the punch and extended kick easy to read.
+    var tip = attack.move === 'kick' ? pose.legR.foot : hand;
+    var strength = Math.sin(t * Math.PI);
+    ctx.globalAlpha = strength * 0.7;
+    ctx.strokeStyle = '#c62b30'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
+    for (var i = -1; i <= 1; i++) {
+      var px = tip.x - Math.sin(a) * i * 6, py = tip.y + Math.cos(a) * i * 6;
+      ctx.beginPath(); ctx.moveTo(px + Math.cos(a) * 6, py + Math.sin(a) * 6);
+      ctx.lineTo(px + Math.cos(a) * (13 + strength * 8), py + Math.sin(a) * (13 + strength * 8)); ctx.stroke();
+    }
+    ctx.restore();
   },
 
   // Never draw a streak behind the point where this projectile was fired.
@@ -1456,6 +1560,11 @@ var Game = {
       ctx.fillText(String(have), chipX + chipW - 62, chipY + 47);
     }
 
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(24,24,28,0.58)';
+    ctx.font = 'bold 12px ui-monospace, Menlo, monospace';
+    ctx.fillText('E  KUNG FU   /   F  SWORD', W - 30, H - 94);
+
     /* owned powers, as little marginalia */
     var px = 30, py = H - 76;
     ctx.textAlign = 'left';
@@ -1588,11 +1697,14 @@ var Game = {
     ctx.fillStyle = 'rgba(24,24,28,' + blink + ')';
     ctx.font = 'bold 20px ui-monospace, Menlo, monospace';
     ctx.fillText('PRESS ENTER  /  CLICK TO START', W / 2, 566);
+    ctx.fillStyle = 'rgba(24,24,28,0.72)';
+    ctx.font = 'bold 13px ui-monospace, Menlo, monospace';
+    ctx.fillText('E  KUNG FU COMBO     •     F  SWORD', W / 2, 592);
 
     if (this.best > 0) {
       ctx.fillStyle = 'rgba(24,24,28,0.5)';
       ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
-      ctx.fillText('BEST  ' + this.best, W / 2, 606);
+      ctx.fillText('BEST  ' + this.best, W / 2, 620);
     }
   },
 
