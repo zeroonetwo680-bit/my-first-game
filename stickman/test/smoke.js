@@ -833,6 +833,89 @@ Game.player.ink=100; Game.activateBlast(); Game.loadHouseRoom(2);
 faded && !Game.blast
 `, v => v === true);
 
+console.log('--- room interaction and sword enemy ---');
+check('house rooms contain distinct breakable supplies', `
+Game.startHouse(); var a = Game.crates.map(c => c.kind).join(',');
+Game.loadHouseRoom(2); var b = Game.crates.map(c => c.kind).join(',');
+Game.loadHouseRoom(3); a === 'health,stapler' && b === 'health,eraser' && Game.crates.length === 0
+`, v => v === true);
+
+check('a fast shot breaks a box with swept collision and drops first aid', `
+Game.startHouse(); Game.enemies.length=0; Game.pending.length=0;
+var box=Game.crates[0]; Game.pickups.length=0;
+Game.bullets=[{x:box.x-100,y:box.y,vx:15000,vy:0,life:1,dmg:30,r:2,a:0,pierce:0,bounce:0}];
+Game.updateBullets(1/60);
+Game.crates.indexOf(box)===-1 && Game.bullets.length===0 && Game.pickups.some(k => k.kind==='health')
+`, v => v === true);
+
+check('a sword strike can open a box and reveal its weapon', `
+Game.startHouse(); Game.enemies.length=0; Game.pending.length=0; Game.pickups.length=0;
+var p=Game.player; var box=Game.crates[1]; p.x=box.x-60; p.y=box.y+p.size*0.4; p.aim=0;
+Game.startMelee('sword'); Game.updateMelee(0.2);
+Game.crates.indexOf(box)===-1 && Game.pickups.some(k => k.w==='stapler')
+`, v => v === true);
+
+check('first aid remains at full health and heals only when needed', `
+Game.startHouse(); var p=Game.player; Game.pickups.length=0;
+var box=Game.crates[0]; Game.hitCrate(box,100); p.x=box.x; p.y=box.y+p.size*0.4;
+Game.updatePickups(0.01); var retained=Game.pickups.length===1 && p.hp===100;
+p.hp=85; Game.updatePickups(0.01);
+retained && p.hp===100 && Game.pickups.length===0
+`, v => v === true);
+
+check('shots aim through the crosshair from the raised weapon', `
+Game.startHouse(); Game.pending.length=0; Game.enemies.length=0; Game.crates.length=0;
+var p=Game.player; p.x=400; p.y=450; p.vx=p.vy=0;
+Input.touch.active=false; Input.mouse.down=false; Input.mouse.x=1000; Input.mouse.y=450;
+Game.updatePlayer(1/120); Game.fire(); var b=Game.bullets[0];
+Game.distToSegment(Input.mouse.x,Input.mouse.y,b.x,b.y,b.x+b.vx,b.y+b.vy)<6
+`, v => v === true);
+
+check('reticle alignment works in all four directions', `
+Game.startHouse(); Game.pending.length=0; Game.enemies.length=0; Game.crates.length=0;
+var p=Game.player, ok=true; Input.touch.active=false; Input.mouse.down=false;
+for (var target of [[1000,450],[100,450],[400,90],[400,700]]) {
+  p.x=400;p.y=450;p.vx=p.vy=0;Game.bullets.length=0;
+  Input.mouse.x=target[0];Input.mouse.y=target[1];Game.updatePlayer(1/120);Game.fire();
+  var b=Game.bullets[0];
+  if (Game.distToSegment(target[0],target[1],b.x,b.y,b.x+b.vx,b.y+b.vy)>6) ok=false;
+}
+ok
+`, v => v === true);
+
+check('swordsman telegraphs before lunging and damages only during the lunge', `
+Game.startHouse(); Game.enemies.length=0; Game.pending.length=0;
+var p=Game.player; p.x=500; p.y=420; p.iframes=0;
+var e=Game.spawnEnemy('swordsman', 640, 420); var hp=p.hp;
+Game.updateEnemies(0.01); var windup=e.swordPhase==='windup' && p.hp===hp;
+Game.updateEnemies(0.66); var lunging=e.swordPhase==='lunge' && p.hp===hp;
+for (var i=0; i<7; i++) Game.updateEnemies(0.05);
+windup && lunging && p.hp===hp-e.dmg && e.swordPhase==='recovery'
+`, v => v === true);
+
+check('hitting a swordsman interrupts a telegraphed attack', `
+Game.startHouse(); Game.enemies.length=0; var p=Game.player;
+var e=Game.spawnEnemy('swordsman',p.x+140,p.y);
+Game.updateEnemies(0.01); var windup=e.swordPhase==='windup';
+Game.hurtEnemy(e,5,0);
+windup && e.swordPhase==='recovery' && e.swordTimer>0
+`, v => v === true);
+
+check('ink blast can break supplies when its ring reaches them', `
+Game.startHouse(); Game.enemies.length=0; Game.pending.length=0;
+var p=Game.player, box=Game.crates[0]; p.x=box.x-150; p.y=box.y+p.size*0.4; p.ink=100;
+Game.activateBlast(); var before=Game.crates.indexOf(box)!==-1;
+Game.updateEffects(0.4);
+before && Game.crates.indexOf(box)===-1 && Game.pickups.some(k=>k.kind==='health')
+`, v => v === true);
+
+check('opening boxes and changing rooms clears box state safely', `
+Game.startHouse(); var box=Game.crates[0]; Game.hitCrate(box, 100); Game.hitCrate(box,100);
+var one=Game.pickups.filter(k => k.kind==='health').length === 1;
+Game.loadHouseRoom(3);
+one && Game.crates.length===0 && Game.pickups.length===0
+`, v => v === true);
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();

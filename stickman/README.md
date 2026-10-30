@@ -17,7 +17,9 @@ telegraphs a charge with a red dashed line. At half health the guardian gets
 faster and fires a radial volley after each charge. Between the second room and
 the boss, choose a what-if power. Health recovers a little on entering each room;
 your score, equipped weapon, ammunition and powers carry between rooms. Each
-cleared room drops a guaranteed tool on the path to the exit.
+cleared room drops a guaranteed tool on the path to the exit. The training hall
+introduces a swordsman: its red dashed warning shows the coming lunge, and a
+hit during the wind-up interrupts it.
 
 Defeat the guardian to complete the house. Completion is saved locally in the
 browser and marked on the map. Houses 02 and 03 are placeholders, not playable
@@ -57,6 +59,13 @@ science fiction, the line under it is the science.
 | Pick up | walk over the tool | walk over the tool |
 | Pause / sound | `P` / `M` | — |
 
+## Breakable supplies
+
+Shoot or slash the marked boxes in the first two rooms. Red-cross boxes contain
+first aid (up to 25 health); the others contain a weapon. Walk over the dropped
+supply to collect it. A full-health player leaves first aid on the ground until
+it is needed or expires. Ink Blast can break boxes too.
+
 ## Close combat
 
 Aim toward an enemy and press **E** for a punch; press it again for a kick.
@@ -91,7 +100,8 @@ found on the page, dropped by whatever just died. Each weapon is a different
 Shots are born at the **tip of the tool**, not at the character's chest: the fire
 code reads the same pose the figure is drawn in that frame, walks out to the end
 of the barrel and spawns the bullet there, so the muzzle flash, the weapon and
-the bullet start at the same point. Bullet streaks are limited to the distance
+the bullet start at the same point. Aim is calculated from the shoulder so the
+shot follows the crosshair rather than passing over it. Bullet streaks are limited to the distance
 they have travelled, so they never extend back through the player on the first
 frame.
 
@@ -113,7 +123,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 90 checks: house, boss, melee, blast, weapons and powers
+node test/smoke.js        # 100 checks: house, supplies, swordsman, aim, melee, blast and boss
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

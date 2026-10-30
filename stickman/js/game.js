@@ -30,7 +30,8 @@ var Game = {
   splats: [],
   marks: [],
   pending: [],      // telegraphed spawns
-  pickups: [],      // stationery lying on the page, waiting to be picked up
+  pickups: [],      // stationery and first aid waiting to be picked up
+  crates: [],       // breakable supplies in house rooms
   floats: [],
 
   wave: 0,
@@ -167,7 +168,7 @@ var Game = {
     this.t = 0; this.timeScale = 1; this.slow = 0; this.freeze = 0;
     this.shake = 0; this.flash = 0;
     this.enemies.length = 0; this.bullets.length = 0; this.shots.length = 0;
-    this.pickups.length = 0;
+    this.pickups.length = 0; this.crates.length = 0;
     this.parts.length = 0; this.splats.length = 0; this.marks.length = 0;
     this.pending.length = 0; this.floats.length = 0;
     this.wave = 0; this.waveTimer = 0; this.banner = 0; this.bannerText = '';
@@ -218,15 +219,17 @@ var Game = {
     this.toast = 0; this.toastText = '';
     this.enemies.length = 0; this.pending.length = 0;
     this.bullets.length = 0; this.shots.length = 0; this.blast = null;
-    this.pickups.length = 0; this.parts.length = 0;
+    this.pickups.length = 0; this.crates.length = 0; this.parts.length = 0;
     this.marks.length = 0; this.splats.length = 0;
     var p = this.player;
     p.x = room === 1 ? 250 : 160; p.y = H / 2 + 30;
     p.vx = p.vy = 0; p.attack = null; p.queuedMelee = null;
     p.iframes = Math.max(p.iframes, 0.6);
     if (room > 1) p.hp = Math.min(p.maxhp, p.hp + 15);
+    if (room === 1) this.crates.push({x: 690, y: 235, hp: 22, kind: 'health'}, {x: 925, y: 505, hp: 22, kind: 'stapler'});
+    if (room === 2) this.crates.push({x: 510, y: 245, hp: 22, kind: 'health'}, {x: 900, y: 505, hp: 22, kind: 'eraser'});
     var groups = [[], ['walker', 'runner', 'walker', 'runner', 'walker'],
-      ['runner', 'thrower', 'walker', 'runner', 'brute', 'thrower'], ['boss']];
+      ['runner', 'thrower', 'swordsman', 'runner', 'brute', 'thrower'], ['boss']];
     var types = groups[room];
     for (var i = 0; i < types.length; i++) {
       var pos = room === 3 ? { x: 960, y: 360 } : this.edgePoint();
@@ -317,6 +320,7 @@ var Game = {
     var base = {
       walker: { hp: 22, speed: 62, size: 108, dmg: 9, r: 19, score: 10 },
       runner: { hp: 14, speed: 118, size: 96, dmg: 7, r: 16, score: 14 },
+      swordsman: { hp: 36, speed: 78, size: 116, dmg: 14, r: 19, score: 24 },
       thrower: { hp: 18, speed: 48, size: 104, dmg: 8, r: 18, score: 18 },
       brute: { hp: 70, speed: 42, size: 152, dmg: 20, r: 30, score: 40 },
       boss: { hp: 260, speed: 48, size: 205, dmg: 18, r: 38, score: 300 }
@@ -328,7 +332,7 @@ var Game = {
       phase: this.rng() * TAU, t: 0, hurt: 0, stun: 0,
       attackCd: 0, throwCd: 0.8 + this.rng() * 1.2,
       seed: 1 + Math.floor(this.rng() * 9999),
-      dead: false, deadT: 0, bossPhase: 'idle', bossTimer: 2.1, chargeX: 0, chargeY: 0, enraged: false
+      dead: false, deadT: 0, bossPhase: 'idle', bossTimer: 2.1, chargeX: 0, chargeY: 0, enraged: false, swordPhase: 'approach', swordTimer: 0, swordHit: false
     };
     this.enemies.push(e);
     return e;
@@ -452,11 +456,13 @@ var Game = {
     p.phase += dt * (6 + spd * 0.028) * (0.3 + p.gait);
     p.facing = p.vx < -8 ? -1 : p.vx > 8 ? 1 : p.facing;
 
-    /* aim: mouse, or the right half of the screen on touch */
+    /* Aim from the shoulder rather than the feet: the muzzle is on that
+     * arm, so shots travel through the crosshair instead of above it. */
+    var shoulder = this.playerPose().shoulder;
     if (Input.touch.active && Input.touch.aimId !== -1) {
-      p.aim = angleTo(p.x, p.y, Input.touch.ax, Input.touch.ay);
+      p.aim = angleTo(shoulder.x, shoulder.y, Input.touch.ax, Input.touch.ay);
     } else {
-      p.aim = angleTo(p.x, p.y, Input.mouse.x, Input.mouse.y);
+      p.aim = angleTo(shoulder.x, shoulder.y, Input.mouse.x, Input.mouse.y);
     }
 
     /* timers */
@@ -536,6 +542,14 @@ var Game = {
         this.hurtEnemy(e, damage, a.aim);
         this.shake = Math.max(this.shake, a.move === 'sword' ? 5 : 3);
       }
+      for (var ci = this.crates.length - 1; ci >= 0; ci--) {
+        var box = this.crates[ci];
+        var cx = box.x - p.x, cy = box.y + p.size * 0.4 - p.y;
+        var cd = Math.hypot(cx, cy);
+        if (cd <= reach + 24 && (cd <= 24 || Math.abs(angleDelta(a.aim, Math.atan2(cy, cx))) <= halfArc)) {
+          this.hitCrate(box, damage);
+        }
+      }
     }
     if (progress >= 1) p.attack = null;
   },
@@ -582,6 +596,10 @@ var Game = {
         }
       }
     } finally { this.blasting = false; }
+    for (var c = this.crates.length - 1; c >= 0; c--) {
+      var box = this.crates[c];
+      if (dist(b.x, b.y, box.x, box.y) <= radius + 23) this.hitCrate(box, 65);
+    }
     for (var j = this.shots.length - 1; j >= 0; j--) {
       if (dist(b.x, b.y, this.shots[j].x, this.shots[j].y) <= radius) this.shots.splice(j, 1);
     }
@@ -754,6 +772,26 @@ var Game = {
             }
           }
         }
+      } else if (e.type === 'swordsman') {
+        e.swordTimer -= dt;
+        if (e.swordPhase === 'approach') {
+          e.x += ax * spd * dt; e.y += ay * spd * dt;
+          if (d < 160 && e.swordTimer <= 0) {
+            e.swordPhase = 'windup'; e.swordTimer = 0.65;
+            e.chargeX = ax; e.chargeY = ay; e.swordHit = false;
+          }
+        } else if (e.swordPhase === 'windup') {
+          if (e.swordTimer <= 0) { e.swordPhase = 'lunge'; e.swordTimer = 0.3; }
+        } else if (e.swordPhase === 'lunge') {
+          e.x = clamp(e.x + e.chargeX * 420 * dt, 40, W - 40);
+          e.y = clamp(e.y + e.chargeY * 420 * dt, 40, H - 40);
+          if (!e.swordHit && dist(e.x, e.y, p.x, p.y) < e.r + 40) {
+            e.swordHit = true; this.damagePlayer(e.dmg, e.chargeX, e.chargeY);
+          }
+          if (e.swordTimer <= 0) { e.swordPhase = 'recovery'; e.swordTimer = 0.85; }
+        } else if (e.swordTimer <= 0) {
+          e.swordPhase = 'approach'; e.swordTimer = 0.2;
+        }
       } else if (e.type === 'thrower') {
         /* keep a working distance, then throw */
         var want = 250;
@@ -803,7 +841,7 @@ var Game = {
       }
 
       /* contact damage */
-      if (d < e.r + 20 && e.attackCd <= 0) {
+      if (e.type !== 'swordsman' && d < e.r + 20 && e.attackCd <= 0) {
         e.attackCd = 0.9;
         this.damagePlayer(e.dmg, ax, ay);
       }
@@ -817,6 +855,7 @@ var Game = {
     var i, j;
     for (i = this.bullets.length - 1; i >= 0; i--) {
       var b = this.bullets[i];
+      var previousX = b.x, previousY = b.y;
       if (this.powers.eyes && b.pierce <= 0) this.home(b, dt);
       b.x += b.vx * dt; b.y += b.vy * dt;
       if (b.traveled !== undefined) b.traveled += Math.hypot(b.vx, b.vy) * dt;
@@ -866,6 +905,17 @@ var Game = {
           break;
         }
       }
+      // Swept collision prevents fast needles skipping a small supply box.
+      if (this.bullets[i] === b) {
+        for (j = this.crates.length - 1; j >= 0; j--) {
+          var box = this.crates[j];
+          if (this.distToSegment(box.x, box.y, previousX, previousY, b.x, b.y) <= 23 + b.r) {
+            this.hitCrate(box, b.dmg);
+            this.bullets.splice(i, 1);
+            break;
+          }
+        }
+      }
     }
 
     for (i = this.shots.length - 1; i >= 0; i--) {
@@ -905,6 +955,7 @@ var Game = {
   hurtEnemy: function (e, dmg, dirA) {
     if (e.dead) return;
     e.hp -= dmg;
+    if (e.type === 'swordsman' && e.swordPhase === 'windup') { e.swordPhase = 'recovery'; e.swordTimer = 0.65; }
     this.gainInk(Math.max(3, Math.min(12, dmg * 0.4)));
     e.hurt = 0.12;
     e.stun = Math.min(0.35, e.stun + 0.12);
@@ -1022,6 +1073,22 @@ var Game = {
     this.splats.push({ x: x, y: y, blobs: blobs });
   },
 
+  hitCrate: function (box, damage) {
+    var index = this.crates.indexOf(box);
+    if (index === -1) return;
+    box.hp -= damage;
+    this.ink(box.x, box.y, 3, 0.25);
+    if (box.hp > 0) return;
+    this.crates.splice(index, 1);
+    for (var i = 0; i < 8; i++) this.ink(box.x, box.y, 2 + Math.random() * 3, 0.4);
+    if (this.pickups.length > 6) this.pickups.shift();
+    if (box.kind === 'health') {
+      this.pickups.push({ x: box.x, y: box.y, kind: 'health', t: 0, life: 22, bob: this.rng() * TAU });
+    } else this.dropWeapon(box.x, box.y, box.kind);
+    this.toastText = 'SUPPLIES FOUND - WALK OVER TO COLLECT'; this.toast = 2.2;
+    Sfx.pickup();
+  },
+
   dropWeapon: function (x, y, id) {
     if (this.pickups.length > 6) return null;
     var which = id || this.WEAPON_IDS[Math.floor(this.rng() * this.WEAPON_IDS.length)];
@@ -1042,7 +1109,12 @@ var Game = {
       k.life -= dt;
       if (k.life <= 0) { this.pickups.splice(i, 1); continue; }
       if (!p.dead && dist(k.x, k.y, p.x, p.y - p.size * 0.4) < 42) {
-        this.equipWeapon(k.w);
+        if (k.kind === 'health') {
+          if (p.hp >= p.maxhp) continue;
+          p.hp = Math.min(p.maxhp, p.hp + 25);
+          this.toastText = 'FIRST AID +25 HP'; this.toast = 1.8;
+          Sfx.pickup();
+        } else this.equipWeapon(k.w);
         for (var n = 0; n < 10; n++) this.ink(k.x, k.y, 2 + Math.random() * 2, 0.3);
         this.pickups.splice(i, 1);
       }
@@ -1125,6 +1197,7 @@ var Game = {
     if (this.house && this.state !== 'map') this.drawHouseRoom(ctx);
     this.drawGround(ctx);
     this.drawMarks(ctx);
+    this.drawCrates(ctx);
     this.drawPickups(ctx);
     this.drawPending(ctx);
     this.drawEnemies(ctx);
@@ -1161,10 +1234,25 @@ var Game = {
     ctx.fillStyle = 'rgba(35,32,30,0.38)';
     ctx.textAlign = 'left'; ctx.font = 'bold 13px ui-monospace, monospace';
     ctx.fillText(['', '01 / THE ENTRY', '02 / THE HALL', '03 / GUARDIAN ROOM'][h.room], 105, 121);
+    // Faint furniture and floor mats establish a place without blocking combat.
+    ctx.fillStyle = 'rgba(120,100,80,0.065)'; ctx.strokeStyle = 'rgba(65,56,48,0.18)'; ctx.lineWidth = 2;
+    if (h.room === 1) {
+      ctx.fillRect(145, 150, 210, 54); ctx.strokeRect(145, 150, 210, 54);
+      ctx.beginPath(); ctx.moveTo(145, 180); ctx.lineTo(355, 180);
+      ctx.moveTo(215, 150); ctx.lineTo(215, 204); ctx.moveTo(285, 150); ctx.lineTo(285, 204); ctx.stroke();
+      ctx.fillStyle = 'rgba(130,100,80,0.05)'; ctx.fillRect(440, 275, 370, 215);
+      ctx.strokeRect(440, 275, 370, 215);
+      ctx.fillStyle = 'rgba(60,50,40,0.35)'; ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.fillText('SUPPLIES', 193, 170);
+    }
     if (h.room === 2) {
       ctx.strokeStyle = 'rgba(45,42,40,0.18)'; ctx.lineWidth = 2;
       ctx.strokeRect(530, 130, 220, 58);
       ctx.beginPath(); ctx.moveTo(545, 160); ctx.lineTo(735, 160); ctx.stroke();
+      ctx.fillStyle = 'rgba(130,100,80,0.05)'; ctx.fillRect(325, 240, 630, 300);
+      ctx.strokeRect(325, 240, 630, 300);
+      ctx.fillStyle = 'rgba(60,50,40,0.35)'; ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.textAlign = 'center'; ctx.fillText('THE TRAINING HALL', 640, 151); ctx.textAlign = 'left';
     } else if (h.room === 3) {
       ctx.strokeStyle = 'rgba(186,52,52,0.22)'; ctx.lineWidth = 3;
       ctx.beginPath(); ctx.arc(W / 2, H / 2, 190, 0, TAU); ctx.stroke();
@@ -1311,6 +1399,30 @@ var Game = {
   /* The stationery lying on the page. Drawn as a small paper tab with the
    * tool itself on it, plus a name, so a player who has never seen a drop
    * knows exactly what it is before touching it. */
+  drawCrates: function (ctx) {
+    for (var i = 0; i < this.crates.length; i++) {
+      var b = this.crates[i];
+      ctx.save(); ctx.translate(b.x, b.y);
+      ctx.fillStyle = 'rgba(30,30,34,0.12)';
+      ctx.beginPath(); ctx.ellipse(0, 26, 33, 7, 0, 0, TAU); ctx.fill();
+      ctx.fillStyle = '#e4d6bb'; ctx.strokeStyle = '#665d4e'; ctx.lineWidth = 2;
+      ctx.fillRect(-28, -24, 56, 48); ctx.strokeRect(-28, -24, 56, 48);
+      ctx.strokeStyle = 'rgba(91,78,59,0.35)'; ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(-23,-19); ctx.lineTo(23,19);
+      ctx.moveTo(23,-19); ctx.lineTo(-23,19); ctx.stroke();
+      ctx.fillStyle = '#fffdf5'; ctx.fillRect(-12, -12, 24, 24);
+      if (b.kind === 'health') {
+        ctx.fillStyle = '#ba3436'; ctx.fillRect(-3, -9, 6, 18); ctx.fillRect(-9, -3, 18, 6);
+      } else {
+        ctx.fillStyle = '#29282a'; ctx.fillRect(-8, -2, 16, 4);
+        ctx.fillRect(4, -6, 3, 12);
+      }
+      ctx.textAlign = 'center'; ctx.font = 'bold 10px ui-monospace, monospace';
+      ctx.fillStyle = '#504b45'; ctx.fillText('SHOOT / SLASH', 0, 43);
+      ctx.restore();
+    }
+  },
+
   drawPickups: function (ctx) {
     for (var i = 0; i < this.pickups.length; i++) {
       var k = this.pickups[i];
@@ -1336,12 +1448,14 @@ var Game = {
       ctx.fill();
       ctx.stroke();
 
-      this.drawTool(ctx, k.w, 0, -1, 1);
+      if (k.kind === 'health') {
+        ctx.fillStyle = '#ba3436'; ctx.fillRect(-3, -11, 6, 20); ctx.fillRect(-10, -4, 20, 6);
+      } else this.drawTool(ctx, k.w, 0, -1, 1);
 
       ctx.fillStyle = 'rgba(30,30,34,0.85)';
       ctx.font = 'bold 9px ui-monospace, Menlo, monospace';
       ctx.textAlign = 'center';
-      ctx.fillText(w.name, 0, 30);
+      ctx.fillText(k.kind === 'health' ? '+25 HP' : w.name, 0, 30);
       ctx.restore();
     }
   },
@@ -1458,14 +1572,21 @@ var Game = {
     for (var i = 0; i < this.enemies.length; i++) {
       var e = this.enemies[i];
       var a = angleTo(e.x, e.y, this.player ? this.player.x : e.x, this.player ? this.player.y : e.y);
+      if (e.type === 'swordsman' && (e.swordPhase === 'windup' || e.swordPhase === 'lunge')) a = Math.atan2(e.chargeY, e.chargeX);
       /* only the thrower takes aim; the rest swing their arms as they walk,
        * otherwise every enemy reads as a pointing statue */
       var p = Rig.pose({
         x: e.x, y: e.y, size: e.size, phase: e.phase, gait: e.dead ? 0 : (e.gait || 0),
         t: this.t, seed: e.seed,
-        aim: e.dead ? null : (e.type === 'thrower' ? a : null),
+        aim: e.dead ? null : ((e.type === 'thrower' || e.type === 'swordsman') ? a : null),
         crouch: e.dead ? 1 : 0
       });
+      if (!e.dead && e.type === 'swordsman' && e.swordPhase === 'windup') {
+        ctx.save(); ctx.strokeStyle = 'rgba(191,46,48,0.8)'; ctx.lineWidth = 3;
+        ctx.setLineDash([6, 6]); ctx.beginPath(); ctx.moveTo(e.x, e.y);
+        ctx.lineTo(e.x + e.chargeX * 135, e.y + e.chargeY * 135); ctx.stroke();
+        ctx.setLineDash([]); ctx.restore();
+      }
       if (!e.dead && e.type === 'boss' && e.bossPhase === 'windup') {
         ctx.save(); ctx.strokeStyle = 'rgba(194,45,48,0.7)'; ctx.lineWidth = 3;
         ctx.setLineDash([8, 8]); ctx.beginPath();
@@ -1490,6 +1611,16 @@ var Game = {
           flash: e.hurt > 0 ? 'rgba(220,60,60,0.9)' : null,
           face: e.type !== 'brute'
         });
+        if (e.type === 'swordsman') {
+          var hand = p.armPairs[0].right.hand;
+          ctx.save(); ctx.translate(hand.x, hand.y); ctx.rotate(a);
+          ctx.strokeStyle = '#302d2c'; ctx.lineWidth = 3;
+          ctx.beginPath(); ctx.moveTo(-4, -7); ctx.lineTo(-4, 7); ctx.stroke();
+          ctx.fillStyle = '#fffdf7'; ctx.strokeStyle = '#343234'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(49, -2); ctx.lineTo(58, 0);
+          ctx.lineTo(49, 2); ctx.lineTo(0, 4); ctx.closePath(); ctx.fill(); ctx.stroke();
+          ctx.restore();
+        }
         if (e.type === 'boss') {
           ctx.save(); ctx.strokeStyle = '#bb2f32'; ctx.lineWidth = 4;
           ctx.beginPath(); ctx.moveTo(p.head.x - 20, p.head.y - p.headR + 4);

@@ -251,4 +251,24 @@ Game.player.iframes = 0;
 `);
 shot('18-boss-enraged');
 
+/* New room props, hostile swordsman windup and a first-aid pickup. */
+run(`
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+Game.banner = 0; Game.player.iframes = 0; Game.player.x = 385; Game.player.y = 425;
+Game.player.aim = 0; Input.mouse.x = 800; Input.mouse.y = 300;
+Game.spawnEnemy('walker', 850, 430);
+`);
+shot('19-supply-room');
+run(`
+Game.loadHouseRoom(2); Game.pending.length = 0; Game.enemies.length = 0;
+Game.banner = 0; Game.player.iframes = 0; Game.player.x = 460; Game.player.y = 430;
+Game.player.aim = 0; var swordsman = Game.spawnEnemy('swordsman', 630, 430);
+swordsman.swordPhase = 'windup'; swordsman.chargeX = -1; swordsman.chargeY = 0;
+`);
+shot('20-swordsman');
+run(`
+Game.hitCrate(Game.crates[0], 30); Game.player.hp = 55;
+`);
+shot('21-first-aid');
+
 console.log('\nframes in', OUT);
