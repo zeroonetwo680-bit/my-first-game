@@ -507,8 +507,8 @@ Game.pending.length = 0; Game.enemies.length = 0;
 Game.player.x = 640; Game.player.y = 460;
 Game.player.aim = 0;
 Game.bullets.length = 0; Game.player.fireCd = 0;
-var m = Game.muzzlePoint();
 Game.fire();
+var m = Game.muzzlePoint();
 var b = Game.bullets[0];
 dist(b.x, b.y, m.x, m.y) < 0.001
 `, v => v === true);
@@ -541,13 +541,76 @@ var ruler = Game.muzzlePoint();
 Math.abs(ruler.x - pen.x) > 4
 `, v => v === true);
 
-check('the drawn tool ends where the bullets start', `
+check('drawn barrel tip matches the fired projectile for every weapon and angle', `
 Game.reset('playing'); Game.startRun();
-Game.player.x = 640; Game.player.y = 460; Game.player.aim = 0;
-var m = Game.muzzlePoint(Game.playerPose(), 'ruler', 0);
-var w = Game.WEAPONS.ruler;
-var tipX = m.x - Math.cos(0) * w.reach * m.scale + Math.cos(0) * w.reach * m.scale;
-Math.abs(tipX - m.x) < 0.001 && m.scale > 0
+var ok = true;
+for (var id of ['pen', 'ruler', 'compass', 'stapler', 'eraser']) {
+  for (var a of [0, Math.PI/2, Math.PI, -Math.PI/2, 0.7]) {
+    Game.equipWeapon(id); Game.player.aim = a;
+    Game.player.vx = 180; Game.bullets.length = 0; Game.fire();
+    var b = Game.bullets[0], pose = Game.playerPose();
+    var original = Game.drawTool, captured;
+    Game.drawTool = function(ctx, id, x, y, scale, angle) {
+      captured = {x:x, y:y, scale:scale, angle:angle};
+    };
+    Game.player.muzzle = 0;
+    Game.drawHeldWeapon({}, pose, id, a);
+    Game.drawTool = original;
+    var tip = Game.WEAPONS[id].tipLength * captured.scale;
+    var x = captured.x + Math.cos(captured.angle) * tip;
+    var y = captured.y + Math.sin(captured.angle) * tip;
+    if (dist(x, y, b.x, b.y) > 0.001) ok = false;
+  }
+}
+ok
+`, v => v === true);
+
+check('real rendered bullet strokes never extend behind the muzzle on their first frames', `
+Game.reset('playing'); Game.startRun();
+var ok = true;
+for (var id of ['pen', 'ruler', 'compass', 'stapler']) {
+  for (var a of [0, 0.8, Math.PI, -Math.PI/2]) {
+    Game.equipWeapon(id); Game.player.aim = a; Game.bullets.length = 0;
+    Game.enemies.length = 0; Game.fire();
+    var origin = {x: Game.bullets[0].x, y: Game.bullets[0].y};
+    // Test immediately and after one fixed timestep, including the long trails.
+    for (var dt of [0, 1/120]) {
+      if (dt) Game.updateBullets(dt);
+      var points = [];
+      var ctx = new Proxy({}, {get: function(o, key) {
+        if (key === 'moveTo' || key === 'lineTo') return function(x,y) { points.push([x,y]); };
+        return function() {};
+      }, set: function() { return true; }});
+      // Test each spread projectile against its own direction.
+      var all = Game.bullets;
+      for (var bullet of all) {
+        Game.bullets = [bullet]; points.length = 0; Game.drawBullets(ctx);
+        for (var pt of points) {
+          var projection = (pt[0]-origin.x)*Math.cos(bullet.a) + (pt[1]-origin.y)*Math.sin(bullet.a);
+          if (projection < -0.001) ok = false;
+        }
+      }
+      Game.bullets = all;
+    }
+  }
+}
+ok
+`, v => v === true);
+
+check('last shot keeps the fired weapon visible during its muzzle flash', `
+Game.reset('playing'); Game.startRun(); Game.equipWeapon('ruler');
+Game.player.ammo = 1; Game.player.aim = 0; Game.fire();
+var fired = '';
+var original = Game.drawHeldWeapon;
+Game.drawHeldWeapon = function(ctx, pose, id) { fired = id; };
+Game.drawPlayer(new Proxy({}, {get:function(){ return function() {}; }, set:function(){ return true; }}));
+Game.drawHeldWeapon = original;
+Game.player.weapon === 'pen' && fired === 'ruler'
+`, v => v === true);
+
+check('pickup descriptions remain text, not the barrel length', `
+Game.reset('playing'); Game.startRun(); Game.equipWeapon('ruler');
+Game.toastText === 'RULER - Three hard slugs in a cone.'
 `, v => v === true);
 
 check('a thrower throws from its hand, not its chest', `

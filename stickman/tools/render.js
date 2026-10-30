@@ -184,4 +184,17 @@ for (var i = 0; i < 3; i++) Game.update(1 / 60);
 `);
 shot('09-muzzle-eraser');
 
+/* A real fixed-step first frame: ensure the streak doesn't reach behind the muzzle. */
+run(`
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.equipWeapon('compass');
+var p = Game.player; p.x = 520; p.y = 470;
+Game.banner = 0; Game.toast = 0;
+Input.mouse.x = 1000; Input.mouse.y = 470; Input.mouse.down = true;
+p.fireCd = 0; Game.update(1 / 120);
+Input.mouse.down = false;
+`);
+shot('10-first-shot');
+
 console.log('\nframes in', OUT);

@@ -60,27 +60,27 @@ var Game = {
     pen: {
       name: 'PEN', tip: 'One clean line. Never runs out.',
       shots: 1, spread: 0, rate: 0.135, dmg: 11, speed: 980, life: 1.1,
-      r: 3, len: 13, pierce: 0, ammo: Infinity, kick: 26, drop: 0, reach: 13, tip: 11
+      r: 3, len: 13, pierce: 0, ammo: Infinity, kick: 26, drop: 0, reach: 13, tipLength: 11
     },
     ruler: {
       name: 'RULER', tip: 'Three hard slugs in a cone.',
       shots: 3, spread: 0.20, rate: 0.40, dmg: 16, speed: 820, life: 0.46,
-      r: 6, len: 21, pierce: 0, ammo: 24, kick: 130, drop: 0.5, reach: 20, tip: 14
+      r: 6, len: 21, pierce: 0, ammo: 24, kick: 130, drop: 0.5, reach: 20, tipLength: 14
     },
     compass: {
       name: 'COMPASS', tip: 'A needle that goes through everything.',
       shots: 1, spread: 0, rate: 0.34, dmg: 24, speed: 1500, life: 1.0,
-      r: 2.5, len: 26, pierce: 3, ammo: 12, kick: 90, drop: 0.65, reach: 13, tip: 11
+      r: 2.5, len: 26, pierce: 3, ammo: 12, kick: 90, drop: 0.65, reach: 13, tipLength: 11
     },
     stapler: {
       name: 'STAPLER', tip: 'Fast, mean, and very short range.',
       shots: 1, spread: 0.10, rate: 0.065, dmg: 5, speed: 1250, life: 0.42,
-      r: 2, len: 8, pierce: 0, ammo: 80, kick: 12, drop: 0.9, reach: 10, tip: 10
+      r: 2, len: 8, pierce: 0, ammo: 80, kick: 12, drop: 0.9, reach: 10, tipLength: 10
     },
     eraser: {
       name: 'ERASER', tip: 'Slow and heavy. It ricochets off the margin.',
       shots: 1, spread: 0, rate: 0.60, dmg: 42, speed: 640, life: 1.6,
-      r: 11, len: 0, pierce: 0, ammo: 8, kick: 240, bounce: 2, drop: 0.4, reach: 10, tip: 9
+      r: 11, len: 0, pierce: 0, ammo: 8, kick: 240, bounce: 2, drop: 0.4, reach: 10, tipLength: 9
     }
   },
   WEAPON_IDS: ['ruler', 'compass', 'stapler', 'eraser'],
@@ -410,7 +410,10 @@ var Game = {
     var spread = w.spread;
     /* the bullet leaves the end of the weapon, read off the very pose the
      * figure is drawn in this frame */
+    p.vx -= Math.cos(p.aim) * w.kick;
+    p.vy -= Math.sin(p.aim) * w.kick;
     var muzzle = this.muzzlePoint();
+    var firedWeapon = p.weapon;
 
     for (var i = 0; i < volley; i++) {
       var a = p.aim + (volley === 1 ? 0 : (i - (volley - 1) / 2) * spread);
@@ -420,13 +423,12 @@ var Game = {
         life: w.life, dmg: w.dmg, r: w.r, a: a,
         w: p.weapon, len: w.len,
         pierce: w.pierce || 0, bounce: w.bounce || 0,
-        dead: false
+        traveled: 0, dead: false
       });
     }
 
-    p.vx -= Math.cos(p.aim) * w.kick;
-    p.vy -= Math.sin(p.aim) * w.kick;
     p.muzzle = 0.06;
+    p.muzzleWeapon = firedWeapon;
 
     /* ammunition: the pen is the only weapon that never runs dry */
     if (p.ammo !== Infinity) {
@@ -434,7 +436,7 @@ var Game = {
       if (p.ammo <= 0) this.expireWeapon();
     }
 
-    Sfx.shootFor(p.weapon);
+    Sfx.shootFor(firedWeapon);
   },
 
   expireWeapon: function () {
@@ -451,6 +453,7 @@ var Game = {
     if (!def || !this.player) return false;
     this.player.weapon = id;
     this.player.ammo = def.ammo;
+    this.player.muzzle = 0;
     this.toastText = def.name + ' - ' + def.tip;
     this.toast = 2.4;
     Sfx.pickup();
@@ -591,6 +594,7 @@ var Game = {
       var b = this.bullets[i];
       if (this.powers.eyes && b.pierce <= 0) this.home(b, dt);
       b.x += b.vx * dt; b.y += b.vy * dt;
+      if (b.traveled !== undefined) b.traveled += Math.hypot(b.vx, b.vy) * dt;
       b.life -= dt;
 
       /* the eraser ricochets off the margin instead of dying there */
@@ -1084,12 +1088,15 @@ var Game = {
     } else {
       /* pen */
       ctx.fillStyle = '#1f2228';
+      ctx.strokeStyle = '#f8f4e9';
+      ctx.lineWidth = 2;
       ctx.beginPath();
       ctx.moveTo(-11, 0);
       ctx.lineTo(4, -2.2);
       ctx.lineTo(11, 0);
       ctx.lineTo(4, 2.2);
       ctx.closePath();
+      ctx.stroke();
       ctx.fill();
       ctx.fillStyle = '#cc2b2b';
       ctx.fillRect(-13, -1, 4, 2);
@@ -1107,7 +1114,7 @@ var Game = {
      * that the point the bullets leave from is exactly the point the tool
      * ends at. Otherwise the muzzle floats a few pixels off the barrel and
      * the shot looks like it comes from nowhere. */
-    var tip = def.tip || 11;
+    var tip = def.tipLength || 11;
     var grip = { x: m.x - Math.cos(aim) * tip * artScale,
                  y: m.y - Math.sin(aim) * tip * artScale };
     this.drawTool(ctx, id, grip.x, grip.y, artScale, aim);
@@ -1201,7 +1208,6 @@ var Game = {
       ctx.restore();
       return;
     }
-    this.drawHeldWeapon(ctx, pose, p.weapon, p.aim);
     Rig.draw(ctx, pose, {
       color: '#111',
       lw: 5,
@@ -1212,6 +1218,14 @@ var Game = {
       alpha: p.iframes > 0 ? 0.62 + Math.sin(this.t * 40) * 0.25 : 1,
       face: true
     });
+    // Draw over the arm so the weapon remains visible even when aiming down.
+    // Keep the last weapon visible for its flash even if its clip just ran out.
+    this.drawHeldWeapon(ctx, pose, p.muzzle > 0 && p.muzzleWeapon ? p.muzzleWeapon : p.weapon, p.aim);
+  },
+
+  // Never draw a streak behind the point where this projectile was fired.
+  trailLength: function (b, length) {
+    return Math.min(length, b.traveled === undefined ? length : b.traveled);
   },
 
   drawBullets: function (ctx) {
@@ -1219,6 +1233,7 @@ var Game = {
     for (var i = 0; i < this.bullets.length; i++) {
       var b = this.bullets[i];
       var c = Math.cos(b.a), sn = Math.sin(b.a);
+      var trail = this.trailLength.bind(this, b);
 
       if (b.w === 'eraser') {
         /* a fat eraser: dark core, soft ring, slow enough to see */
@@ -1239,13 +1254,13 @@ var Game = {
         ctx.strokeStyle = 'rgba(34,36,42,0.22)';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(b.x - c * b.len * 3.2, b.y - sn * b.len * 3.2);
-        ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.moveTo(b.x - c * trail(b.len * 3.2), b.y - sn * trail(b.len * 3.2));
+        ctx.lineTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
         ctx.stroke();
         ctx.strokeStyle = '#111';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.moveTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         ctx.fillStyle = '#cc2b2b';
@@ -1260,13 +1275,13 @@ var Game = {
         ctx.strokeStyle = 'rgba(34,36,42,0.18)';
         ctx.lineWidth = b.r * 1.6;
         ctx.beginPath();
-        ctx.moveTo(b.x - c * b.len * 2.2, b.y - sn * b.len * 2.2);
-        ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.moveTo(b.x - c * trail(b.len * 2.2), b.y - sn * trail(b.len * 2.2));
+        ctx.lineTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
         ctx.stroke();
         ctx.strokeStyle = '#111';
         ctx.lineWidth = b.r;
         ctx.beginPath();
-        ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.moveTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         continue;
@@ -1277,7 +1292,7 @@ var Game = {
         ctx.strokeStyle = '#22242a';
         ctx.lineWidth = 2;
         ctx.beginPath();
-        ctx.moveTo(b.x - c * 7, b.y - sn * 7);
+        ctx.moveTo(b.x - c * trail(7), b.y - sn * trail(7));
         ctx.lineTo(b.x, b.y);
         ctx.stroke();
         continue;
@@ -1287,14 +1302,14 @@ var Game = {
       ctx.strokeStyle = '#111';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
+      ctx.moveTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
       ctx.strokeStyle = 'rgba(17,17,17,0.25)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(b.x - c * b.len * 2.4, b.y - sn * b.len * 2.4);
-      ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
+      ctx.moveTo(b.x - c * trail(b.len * 2.4), b.y - sn * trail(b.len * 2.4));
+      ctx.lineTo(b.x - c * trail(b.len), b.y - sn * trail(b.len));
       ctx.stroke();
     }
     for (var j = 0; j < this.shots.length; j++) {

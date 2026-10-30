@@ -57,7 +57,9 @@ found on the page, dropped by whatever just died. Each weapon is a different
 Shots are born at the **tip of the tool**, not at the character's chest: the fire
 code reads the same pose the figure is drawn in that frame, walks out to the end
 of the barrel and spawns the bullet there, so the muzzle flash, the weapon and
-the bullet are always the same point in space.
+the bullet start at the same point. Bullet streaks are limited to the distance
+they have travelled, so they never extend back through the player on the first
+frame.
 
 Walk over a dropped tool to take it. The clip counts down in the bottom-right
 panel, each tool has its own shot sound and its own bullet art, and when a clip
@@ -77,7 +79,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 63 checks: rig, combat, weapons, muzzle, powers, 2 minutes
+node test/smoke.js        # 66 checks: rig, combat, weapons, muzzle, powers, 2 minutes
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 
