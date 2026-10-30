@@ -30,12 +30,15 @@ var Game = {
   splats: [],
   marks: [],
   pending: [],      // telegraphed spawns
+  pickups: [],      // stationery lying on the page, waiting to be picked up
   floats: [],
 
   wave: 0,
   waveTimer: 0,
   banner: 0,
   bannerText: '',
+  toast: 0,
+  toastText: '',
   score: 0,
   combo: 0,
   comboTimer: 0,
@@ -45,6 +48,42 @@ var Game = {
   offer: [],
   sel: 0,
   runTime: 0,
+
+
+  /* -------------------------------------------------------------- arms ---
+   * The page is the world, so the weapons are what you would find on a desk.
+   * Each one is a different verb, not a different number: the pen is precise,
+   * the ruler clears a cone, the compass punches a line through a crowd, the
+   * stapler is a hose, and the eraser is a wrecking ball that bounces.
+   */
+  WEAPONS: {
+    pen: {
+      name: 'PEN', tip: 'One clean line. Never runs out.',
+      shots: 1, spread: 0, rate: 0.135, dmg: 11, speed: 980, life: 1.1,
+      r: 3, len: 13, pierce: 0, ammo: Infinity, kick: 26, drop: 0
+    },
+    ruler: {
+      name: 'RULER', tip: 'Three hard slugs in a cone.',
+      shots: 3, spread: 0.20, rate: 0.40, dmg: 16, speed: 820, life: 0.46,
+      r: 6, len: 21, pierce: 0, ammo: 24, kick: 130, drop: 0.5
+    },
+    compass: {
+      name: 'COMPASS', tip: 'A needle that goes through everything.',
+      shots: 1, spread: 0, rate: 0.34, dmg: 24, speed: 1500, life: 1.0,
+      r: 2.5, len: 26, pierce: 3, ammo: 12, kick: 90, drop: 0.65
+    },
+    stapler: {
+      name: 'STAPLER', tip: 'Fast, mean, and very short range.',
+      shots: 1, spread: 0.10, rate: 0.065, dmg: 5, speed: 1250, life: 0.42,
+      r: 2, len: 8, pierce: 0, ammo: 80, kick: 12, drop: 0.9
+    },
+    eraser: {
+      name: 'ERASER', tip: 'Slow and heavy. It ricochets off the margin.',
+      shots: 1, spread: 0, rate: 0.60, dmg: 42, speed: 640, life: 1.6,
+      r: 11, len: 0, pierce: 0, ammo: 8, kick: 240, bounce: 2, drop: 0.4
+    }
+  },
+  WEAPON_IDS: ['ruler', 'compass', 'stapler', 'eraser'],
 
   /* ------------------------------------------------------------- powers --- */
   POWERS: [
@@ -128,12 +167,15 @@ var Game = {
     this.t = 0; this.timeScale = 1; this.slow = 0; this.freeze = 0;
     this.shake = 0; this.flash = 0;
     this.enemies.length = 0; this.bullets.length = 0; this.shots.length = 0;
+    this.pickups.length = 0;
     this.parts.length = 0; this.splats.length = 0; this.marks.length = 0;
     this.pending.length = 0; this.floats.length = 0;
     this.wave = 0; this.waveTimer = 0; this.banner = 0; this.bannerText = '';
+    this.toast = 0; this.toastText = '';
     this.score = 0; this.combo = 0; this.comboTimer = 0; this.kills = 0;
     this.powers = Object.create(null);
     this.offer = []; this.sel = 0; this.runTime = 0;
+    this.pickups.length = 0;
     this.player = null;
   },
 
@@ -145,7 +187,8 @@ var Game = {
       aim: -Math.PI / 2, phase: 0, gait: 0,
       fireCd: 0, dashCd: 0, dashT: 0, iframes: 0, hurtT: 0,
       arms: 1, powerCd: 0, regenT: 0, dead: false, deadT: 0,
-      facing: 1, walkT: 0
+      facing: 1, walkT: 0,
+      weapon: 'pen', ammo: Infinity, muzzle: 0
     };
     this.nextWave();
     return this.player;
@@ -232,7 +275,9 @@ var Game = {
       this.updateEnemies(sdt);
       this.updateBullets(sdt);
       this.updatePending(sdt);
+      this.updatePickups(sdt);
       if (this.banner > 0) this.banner -= dt;
+      if (this.toast > 0) this.toast -= dt;
       if (this.comboTimer > 0) {
         this.comboTimer -= dt;
         if (this.comboTimer <= 0) this.combo = 0;
@@ -325,6 +370,7 @@ var Game = {
 
     /* timers */
     p.fireCd -= dt; p.dashCd -= dt; p.iframes -= dt; p.hurtT -= dt;
+    p.muzzle = Math.max(0, p.muzzle - dt);
     p.regenT += dt;
     if (this.powers.heart) {
       p.maxhp = 160;
@@ -349,25 +395,65 @@ var Game = {
     if (wantFire && p.fireCd <= 0) this.fire();
   },
 
+  weaponDef: function () {
+    return this.WEAPONS[(this.player && this.player.weapon) || 'pen'] || this.WEAPONS.pen;
+  },
+
   fire: function () {
     var p = this.player;
-    var rate = this.powers.pain ? 0.105 : 0.135;
+    var w = this.weaponDef();
+    var rate = w.rate * (this.powers.pain ? 0.82 : 1);
     p.fireCd = rate;
-    var count = this.powers.arms ? 3 : 1;
-    var spread = 0.17;
-    for (var i = 0; i < count; i++) {
-      var a = p.aim + (count === 1 ? 0 : (i - (count - 1) / 2) * spread);
-      var hx = p.x + Math.cos(a) * 22;
-      var hy = p.y - p.size * 0.30 + Math.sin(a) * 22;
+
+    /* six arms triples the shots; the spread stays in the weapon's hands */
+    var volley = w.shots * (this.powers.arms ? 3 : 1);
+    var spread = w.spread;
+    var muzzleX = p.x + Math.cos(p.aim) * 26;
+    var muzzleY = p.y - p.size * 0.30 + Math.sin(p.aim) * 26;
+
+    for (var i = 0; i < volley; i++) {
+      var a = p.aim + (volley === 1 ? 0 : (i - (volley - 1) / 2) * spread);
       this.bullets.push({
-        x: hx, y: hy,
-        vx: Math.cos(a) * 980, vy: Math.sin(a) * 980,
-        life: 1.1, dmg: 11, r: 3, a: a
+        x: muzzleX, y: muzzleY,
+        vx: Math.cos(a) * w.speed, vy: Math.sin(a) * w.speed,
+        life: w.life, dmg: w.dmg, r: w.r, a: a,
+        w: p.weapon, len: w.len,
+        pierce: w.pierce || 0, bounce: w.bounce || 0,
+        dead: false
       });
     }
-    p.vx -= Math.cos(p.aim) * 26;
-    p.vy -= Math.sin(p.aim) * 26;
-    Sfx.shoot();
+
+    p.vx -= Math.cos(p.aim) * w.kick;
+    p.vy -= Math.sin(p.aim) * w.kick;
+    p.muzzle = 0.06;
+
+    /* ammunition: the pen is the only weapon that never runs dry */
+    if (p.ammo !== Infinity) {
+      p.ammo -= 1;
+      if (p.ammo <= 0) this.expireWeapon();
+    }
+
+    Sfx.shootFor(p.weapon);
+  },
+
+  expireWeapon: function () {
+    var p = this.player;
+    var was = this.weaponDef().name;
+    p.weapon = 'pen';
+    p.ammo = Infinity;
+    this.bannerText = was + ' EMPTY — BACK TO THE PEN';
+    this.banner = 1.4;
+  },
+
+  equipWeapon: function (id) {
+    var def = this.WEAPONS[id];
+    if (!def || !this.player) return false;
+    this.player.weapon = id;
+    this.player.ammo = def.ammo;
+    this.toastText = def.name + ' - ' + def.tip;
+    this.toast = 2.4;
+    Sfx.pickup();
+    return true;
   },
 
   dash: function () {
@@ -493,20 +579,51 @@ var Game = {
     var i, j;
     for (i = this.bullets.length - 1; i >= 0; i--) {
       var b = this.bullets[i];
-      if (this.powers.eyes) this.home(b, dt);
+      if (this.powers.eyes && b.pierce <= 0) this.home(b, dt);
       b.x += b.vx * dt; b.y += b.vy * dt;
       b.life -= dt;
-      if (b.life <= 0 || b.x < -20 || b.x > W + 20 || b.y < -20 || b.y > H + 20) {
+
+      /* the eraser ricochets off the margin instead of dying there */
+      if (b.bounce > 0) {
+        if (b.x < 10 || b.x > W - 10) {
+          b.vx *= -1; b.bounce--;
+          b.x = clamp(b.x, 10, W - 10);
+          Sfx.hit();
+        }
+        if (b.y < 10 || b.y > H - 10) {
+          b.vy *= -1; b.bounce--;
+          b.y = clamp(b.y, 10, H - 10);
+          Sfx.hit();
+        }
+      }
+
+      if (b.life <= 0 || b.x < -30 || b.x > W + 30 || b.y < -30 || b.y > H + 30) {
         this.bullets.splice(i, 1);
         continue;
       }
+
       for (j = 0; j < this.enemies.length; j++) {
         var e = this.enemies[j];
-        if (e.dead) continue;
-        var rr = e.r + b.r + 4;
-        if (dist2(b.x, b.y, e.x, e.y - e.size * 0.35) < rr * rr) {
+        if (e.dead || (b.hits && b.hits.indexOf(e) !== -1)) continue;
+        /* A stick figure is tall and thin, so its hit area is a vertical
+         * capsule from the feet to the shoulders. A round box centred on the
+         * chest let bullets fly straight through a body at hip height, which
+         * read as the gun being broken. */
+        var rr = e.r * 0.92 + b.r + 2;
+        var bodyTop = e.y - e.size * 0.80;
+        var bodyLow = e.y - e.size * 0.06;
+        var hit = this.distToSegment(b.x, b.y, e.x, bodyTop, e.x, bodyLow) < rr;
+        if (hit) {
           this.hurtEnemy(e, b.dmg, b.a);
-          this.bullets.splice(i, 1);
+          if (b.pierce > 0) {
+            /* punch through: remember the body so it cannot be hit twice */
+            b.pierce--;
+            if (!b.hits) b.hits = [];
+            b.hits.push(e);
+            b.dmg *= 0.85;
+          } else {
+            this.bullets.splice(i, 1);
+          }
           break;
         }
       }
@@ -582,6 +699,10 @@ var Game = {
       });
     }
     this.splat(e.x, e.y);
+
+    /* a weapon every few kills, more often from the heavy ones */
+    var chance = e.type === 'brute' ? 0.55 : 0.14;
+    if (this.rng() < chance) this.dropWeapon(e.x, e.y);
     this.shake = Math.min(14, this.shake + (e.type === 'brute' ? 10 : 4));
     if (e.type === 'brute') this.freeze = 0.07;
     Sfx.kill();
@@ -660,6 +781,33 @@ var Game = {
     this.splats.push({ x: x, y: y, blobs: blobs });
   },
 
+  dropWeapon: function (x, y, id) {
+    if (this.pickups.length > 6) return null;
+    var which = id || this.WEAPON_IDS[Math.floor(this.rng() * this.WEAPON_IDS.length)];
+    var pick = {
+      x: clamp(x, 40, W - 40), y: clamp(y, 40, H - 40),
+      w: which, t: 0, life: 14, bob: this.rng() * TAU
+    };
+    this.pickups.push(pick);
+    return pick;
+  },
+
+  updatePickups: function (dt) {
+    var p = this.player;
+    if (!p) return;
+    for (var i = this.pickups.length - 1; i >= 0; i--) {
+      var k = this.pickups[i];
+      k.t += dt;
+      k.life -= dt;
+      if (k.life <= 0) { this.pickups.splice(i, 1); continue; }
+      if (!p.dead && dist(k.x, k.y, p.x, p.y - p.size * 0.4) < 42) {
+        this.equipWeapon(k.w);
+        for (var n = 0; n < 10; n++) this.ink(k.x, k.y, 2 + Math.random() * 2, 0.3);
+        this.pickups.splice(i, 1);
+      }
+    }
+  },
+
   updatePending: function (dt) {
     for (var i = this.pending.length - 1; i >= 0; i--) {
       var s = this.pending[i];
@@ -730,6 +878,7 @@ var Game = {
     this.drawPaper(ctx);
     this.drawGround(ctx);
     this.drawMarks(ctx);
+    this.drawPickups(ctx);
     this.drawPending(ctx);
     this.drawEnemies(ctx);
     this.drawPlayer(ctx);
@@ -822,6 +971,145 @@ var Game = {
     }
   },
 
+  /* The stationery lying on the page. Drawn as a small paper tab with the
+   * tool itself on it, plus a name, so a player who has never seen a drop
+   * knows exactly what it is before touching it. */
+  drawPickups: function (ctx) {
+    for (var i = 0; i < this.pickups.length; i++) {
+      var k = this.pickups[i];
+      var bob = Math.sin(k.t * 3 + k.bob) * 4;
+      var fade = k.life < 3 ? (0.35 + Math.abs(Math.sin(k.life * 6)) * 0.65) : 1;
+      var w = this.WEAPONS[k.w];
+      ctx.save();
+      ctx.globalAlpha = fade;
+      ctx.translate(k.x, k.y + bob);
+
+      /* shadow on the sheet */
+      ctx.fillStyle = 'rgba(30,30,34,0.13)';
+      ctx.beginPath();
+      ctx.ellipse(0, 20, 24, 6, 0, 0, TAU);
+      ctx.fill();
+
+      /* the tab */
+      ctx.fillStyle = '#fffdf6';
+      ctx.strokeStyle = 'rgba(30,30,34,0.55)';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.rect(-22, -18, 44, 34);
+      ctx.fill();
+      ctx.stroke();
+
+      this.drawTool(ctx, k.w, 0, -1, 1);
+
+      ctx.fillStyle = 'rgba(30,30,34,0.85)';
+      ctx.font = 'bold 9px ui-monospace, Menlo, monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(w.name, 0, 30);
+      ctx.restore();
+    }
+  },
+
+  /* One shape per tool, reused for the pickup tab and for the thing the
+   * player is holding, so the pickup always looks like what you get. */
+  drawTool: function (ctx, id, x, y, scale, angle) {
+    var s = scale || 1;
+    ctx.save();
+    ctx.translate(x, y);
+    if (angle) ctx.rotate(angle);
+    ctx.scale(s, s);
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+
+    if (id === 'ruler') {
+      ctx.fillStyle = '#e8d9a8';
+      ctx.strokeStyle = '#2a2415';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.rect(-14, -2.5, 28, 5);
+      ctx.fill();
+      ctx.stroke();
+      for (var i = -10; i <= 10; i += 4) {
+        ctx.beginPath();
+        ctx.moveTo(i, -2.5); ctx.lineTo(i, i % 8 === 2 ? 0.5 : -0.5);
+        ctx.stroke();
+      }
+    } else if (id === 'compass') {
+      ctx.strokeStyle = '#2a2a30';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(-11, 0); ctx.lineTo(11, 0);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-11, 0); ctx.lineTo(-8, -7);
+      ctx.moveTo(-11, 0); ctx.lineTo(-8, 7);
+      ctx.stroke();
+      ctx.fillStyle = '#cc2b2b';
+      ctx.beginPath();
+      ctx.moveTo(11, 0); ctx.lineTo(6, -2.2); ctx.lineTo(6, 2.2);
+      ctx.closePath();
+      ctx.fill();
+    } else if (id === 'stapler') {
+      ctx.fillStyle = '#8a8f96';
+      ctx.strokeStyle = '#22252a';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.rect(-10, -5, 20, 10);
+      ctx.fill();
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(-10, 2); ctx.lineTo(9, 2);
+      ctx.stroke();
+    } else if (id === 'eraser') {
+      ctx.fillStyle = '#f0d9dd';
+      ctx.strokeStyle = '#c98d97';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.rect(-9, -6, 18, 12);
+      ctx.fill();
+      ctx.stroke();
+      ctx.strokeStyle = 'rgba(120,90,96,0.5)';
+      ctx.beginPath();
+      ctx.moveTo(-9, 0); ctx.lineTo(9, 0);
+      ctx.stroke();
+    } else {
+      /* pen */
+      ctx.fillStyle = '#1f2228';
+      ctx.beginPath();
+      ctx.moveTo(-11, 0);
+      ctx.lineTo(4, -2.2);
+      ctx.lineTo(11, 0);
+      ctx.lineTo(4, 2.2);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = '#cc2b2b';
+      ctx.fillRect(-13, -1, 4, 2);
+    }
+    ctx.restore();
+  },
+
+  /* The weapon lives in the stickman's aiming hand, at the same angle as the
+   * arm, so the muzzle and the bullets agree. */
+  drawHeldWeapon: function (ctx, pose, id, aim) {
+    var hand = pose.armPairs[0].right.hand;
+    var scale = pose.size / 132;
+    var px = hand.x + Math.cos(aim) * 4 * scale;
+    var py = hand.y + Math.sin(aim) * 4 * scale;
+    this.drawTool(ctx, id, px, py, Math.max(0.55, scale * 1.15), aim);
+
+    /* muzzle puff, a couple of frames after a shot */
+    if (this.player.muzzle > 0) {
+      ctx.save();
+      ctx.globalAlpha = clamp(this.player.muzzle * 10, 0, 1) * 0.8;
+      ctx.fillStyle = 'rgba(30,30,34,0.75)';
+      var mx = px + Math.cos(aim) * (id === 'ruler' ? 22 : 16) * scale;
+      var my = py + Math.sin(aim) * (id === 'ruler' ? 22 : 16) * scale;
+      ctx.beginPath();
+      ctx.arc(mx, my, (id === 'eraser' ? 9 : 4.5) * scale, 0, TAU);
+      ctx.fill();
+      ctx.restore();
+    }
+  },
+
   drawEnemies: function (ctx) {
     for (var i = 0; i < this.enemies.length; i++) {
       var e = this.enemies[i];
@@ -872,6 +1160,7 @@ var Game = {
       ctx.restore();
       return;
     }
+    this.drawHeldWeapon(ctx, pose, p.weapon, p.aim);
     Rig.draw(ctx, pose, {
       color: '#111',
       lw: 5,
@@ -888,18 +1177,83 @@ var Game = {
     ctx.lineCap = 'round';
     for (var i = 0; i < this.bullets.length; i++) {
       var b = this.bullets[i];
-      var len = 13;
+      var c = Math.cos(b.a), sn = Math.sin(b.a);
+
+      if (b.w === 'eraser') {
+        /* a fat eraser: dark core, soft ring, slow enough to see */
+        ctx.fillStyle = '#22242a';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r, 0, TAU);
+        ctx.fill();
+        ctx.strokeStyle = 'rgba(34,36,42,0.30)';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, b.r + 4, 0, TAU);
+        ctx.stroke();
+        continue;
+      }
+
+      if (b.w === 'compass') {
+        /* a needle: thin, long, and visibly faster than everything else */
+        ctx.strokeStyle = 'rgba(34,36,42,0.22)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(b.x - c * b.len * 3.2, b.y - sn * b.len * 3.2);
+        ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.stroke();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        ctx.fillStyle = '#cc2b2b';
+        ctx.beginPath();
+        ctx.arc(b.x, b.y, 2, 0, TAU);
+        ctx.fill();
+        continue;
+      }
+
+      if (b.w === 'ruler') {
+        /* a hard slug: short, thick, with a heavy smear behind it */
+        ctx.strokeStyle = 'rgba(34,36,42,0.18)';
+        ctx.lineWidth = b.r * 1.6;
+        ctx.beginPath();
+        ctx.moveTo(b.x - c * b.len * 2.2, b.y - sn * b.len * 2.2);
+        ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.stroke();
+        ctx.strokeStyle = '#111';
+        ctx.lineWidth = b.r;
+        ctx.beginPath();
+        ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        continue;
+      }
+
+      if (b.w === 'stapler') {
+        /* a staple: a tiny tick, they come far too fast to decorate */
+        ctx.strokeStyle = '#22242a';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(b.x - c * 7, b.y - sn * 7);
+        ctx.lineTo(b.x, b.y);
+        ctx.stroke();
+        continue;
+      }
+
+      /* pen: the original clean line */
       ctx.strokeStyle = '#111';
       ctx.lineWidth = 3;
       ctx.beginPath();
-      ctx.moveTo(b.x - Math.cos(b.a) * len, b.y - Math.sin(b.a) * len);
+      ctx.moveTo(b.x - c * b.len, b.y - sn * b.len);
       ctx.lineTo(b.x, b.y);
       ctx.stroke();
       ctx.strokeStyle = 'rgba(17,17,17,0.25)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.moveTo(b.x - Math.cos(b.a) * len * 2.4, b.y - Math.sin(b.a) * len * 2.4);
-      ctx.lineTo(b.x - Math.cos(b.a) * len, b.y - Math.sin(b.a) * len);
+      ctx.moveTo(b.x - c * b.len * 2.4, b.y - sn * b.len * 2.4);
+      ctx.lineTo(b.x - c * b.len, b.y - sn * b.len);
       ctx.stroke();
     }
     for (var j = 0; j < this.shots.length; j++) {
@@ -1006,8 +1360,45 @@ var Game = {
       ctx.fillText('x' + this.combo + ' COMBO', W - 30, by + 46);
     }
 
+    /* the weapon in hand, bottom right, with its ammunition as ticks */
+    var wd = this.weaponDef();
+    var wx = W - 30, wy = H - 30;
+    var chipW = 236, chipH = 54, chipX = wx - chipW, chipY = wy - chipH + 8;
+    chip(chipX, chipY, chipW, chipH);
+
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(24,24,28,0.42)';
+    ctx.font = 'bold 10px ui-monospace, Menlo, monospace';
+    ctx.fillText('IN HAND', chipX + 12, chipY + 15);
+
+    ctx.fillStyle = 'rgba(24,24,28,0.92)';
+    ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
+    ctx.fillText(wd.name, chipX + 12, chipY + 35);
+
+    /* the tool itself, on the right of the chip */
+    this.drawTool(ctx, p.weapon, chipX + chipW - 28, chipY + 27, 2.0, 0);
+
+    var total = wd.ammo, have = Math.max(0, p.ammo);
+    ctx.textAlign = 'right';
+    if (total === Infinity) {
+      ctx.fillStyle = 'rgba(24,24,28,0.38)';
+      ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
+      ctx.fillText('UNLIMITED', chipX + chipW - 62, chipY + 33);
+    } else {
+      var slots = 10, tw = 5, gap2 = 3;
+      var used = Math.ceil((have / total) * slots);
+      var tx0 = chipX + 12;
+      for (var si = 0; si < slots; si++) {
+        ctx.fillStyle = si < used ? 'rgba(24,24,28,0.70)' : 'rgba(24,24,28,0.13)';
+        ctx.fillRect(tx0 + si * (tw + gap2), chipY + 42, tw, 5);
+      }
+      ctx.fillStyle = 'rgba(24,24,28,0.6)';
+      ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
+      ctx.fillText(String(have), chipX + chipW - 62, chipY + 47);
+    }
+
     /* owned powers, as little marginalia */
-    var px = 30, py = H - 34;
+    var px = 30, py = H - 76;
     ctx.textAlign = 'left';
     for (var k = 0; k < this.POWERS.length; k++) {
       var pw = this.POWERS[k];
@@ -1020,6 +1411,27 @@ var Game = {
       ctx.font = 'bold 10px ui-monospace, Menlo, monospace';
       ctx.fillText(pw.short, wpx + 7, wpy + 1);
       px += 68;
+    }
+
+    /* pickup note: a small paper slip, not the giant wave banner */
+    if (this.toast > 0 && this.state === 'playing') {
+      var ta = Math.min(1, this.toast / 0.35);
+      ctx.save();
+      ctx.globalAlpha = ta;
+      ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
+      var tw2 = ctx.measureText ? ctx.measureText(this.toastText).width : 300;
+      var bx2 = W - 30 - tw2 - 22, by2 = H - 132;
+      ctx.fillStyle = 'rgba(255,253,246,0.96)';
+      ctx.strokeStyle = 'rgba(30,30,34,0.35)';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.rect(bx2, by2, tw2 + 22, 30);
+      ctx.fill();
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(24,24,28,0.9)';
+      ctx.textAlign = 'left';
+      ctx.fillText(this.toastText, bx2 + 11, by2 + 20);
+      ctx.restore();
     }
 
     /* wave banner (never over the power screen or a menu) */
@@ -1105,6 +1517,12 @@ var Game = {
     ctx.fillText('MOUSE   +   HOLD LEFT', W / 2 + 10, 412);
     ctx.fillText('SHIFT   or   RIGHT CLICK', W / 2 + 10, 440);
     ctx.fillText('P', W / 2 + 10, 468);
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(24,24,28,0.62)';
+    ctx.fillText('WEAPONS', W / 2 - 30, 496);
+    ctx.textAlign = 'left';
+    ctx.fillStyle = 'rgba(24,24,28,0.85)';
+    ctx.fillText('WALK OVER THE STATIONERY', W / 2 + 10, 496);
 
     ctx.textAlign = 'center';
     var blink = 0.55 + Math.sin(this.t * 4) * 0.45;

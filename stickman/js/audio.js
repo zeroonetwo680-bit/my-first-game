@@ -66,6 +66,14 @@ var Sfx = (function () {
     unlock: function () { var c = ensure(); if (c && c.state === 'suspended' && c.resume) { try { c.resume(); } catch (e) {} } },
 
     shoot: function () { tone(660, 0.05, 'square', 0.10, 320); },
+    /* each desk weapon gets its own voice, so a clip swap is audible */
+    shootFor: function (weapon) {
+      if (weapon === 'ruler') { tone(240, 0.09, 'square', 0.16, 150); noise(0.05, 0.10, 700); }
+      else if (weapon === 'compass') { tone(1180, 0.05, 'sawtooth', 0.09, 700); }
+      else if (weapon === 'stapler') { tone(900, 0.025, 'square', 0.07, 620); }
+      else if (weapon === 'eraser') { tone(150, 0.16, 'sine', 0.18, 70); noise(0.12, 0.12, 400); }
+      else { tone(660, 0.05, 'square', 0.10, 320); }
+    },
     hit: function () { noise(0.06, 0.16, 900); },
     kill: function () { tone(190, 0.16, 'sawtooth', 0.16, 60); noise(0.12, 0.14, 700); },
     hurt: function () { tone(140, 0.22, 'sawtooth', 0.26, 55); },

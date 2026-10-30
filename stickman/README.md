@@ -37,7 +37,26 @@ science fiction, the line under it is the science.
 | Move | `W A S D` or arrows | drag the left half |
 | Aim and fire | mouse, hold left button | drag the right half |
 | Dash | `Shift` or right click | (see roadmap) |
+| Pick up | walk over the tool | walk over the tool |
 | Pause / sound | `P` / `M` | — |
+
+## Weapons — the page's own stationery
+
+You start with the pen: one clean line, never runs out. Everything else is
+found on the page, dropped by whatever just died. Each weapon is a different
+*verb*, not a bigger number.
+
+| Weapon | What it does | Clip |
+| --- | --- | --- |
+| **Pen** | one precise line, no spread, never dry | ∞ |
+| **Ruler** | three heavy slugs in a cone, big knockback | 24 |
+| **Compass** | a needle that passes through up to three bodies | 12 |
+| **Stapler** | a fast, short-range hose of staples | 80 |
+| **Eraser** | a wrecking ball that ricochets off the margin twice | 8 |
+
+Walk over a dropped tool to take it. The clip counts down in the bottom-right
+panel, each tool has its own shot sound and its own bullet art, and when a clip
+empties you are handed back the pen rather than left defenceless.
 
 ## The six powers
 
@@ -53,7 +72,7 @@ science fiction, the line under it is the science.
 ## Tests
 
 ```bash
-node test/smoke.js        # 40 checks: rig geometry, combat, powers, 2 minutes of play
+node test/smoke.js        # 57 checks: rig, combat, weapons, powers, 2 minutes of play
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

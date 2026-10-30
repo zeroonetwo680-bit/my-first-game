@@ -346,6 +346,160 @@ Game.damagePlayer(5, 1, 0);
 Math.abs(Game.player.vx) < 1
 `, v => v === true);
 
+console.log('--- weapons ---');
+check('a run starts with the pen, and it never runs dry', `
+Game.reset('playing'); Game.startRun();
+[Game.player.weapon, Game.player.ammo].join(',')
+`, v => v === 'pen,Infinity');
+
+check('there are five weapons and four of them are pickups', `
+Object.keys(Game.WEAPONS).length === 5 && Game.WEAPON_IDS.length === 4
+`, v => v === true);
+
+check('every weapon has a finite clip except the pen', `
+Game.WEAPON_IDS.every(function (id) { return isFinite(Game.WEAPONS[id].ammo) && Game.WEAPONS[id].ammo > 0; }) &&
+  !isFinite(Game.WEAPONS.pen.ammo)
+`, v => v === true);
+
+check('equipping a weapon swaps the clip in', `
+Game.reset('playing'); Game.startRun();
+Game.equipWeapon('ruler');
+[Game.player.weapon, Game.player.ammo].join(',')
+`, v => v === 'ruler,24');
+
+check('the ruler fires three slugs in a cone', `
+Game.reset('playing'); Game.startRun();
+Game.equipWeapon('ruler');
+Game.bullets.length = 0; Game.player.fireCd = 0;
+Game.fire();
+var angles = Game.bullets.map(function (b) { return Math.round(b.a * 100) / 100; });
+Game.bullets.length === 3 && new Set(angles).size === 3
+`, v => v === true);
+
+check('each slug costs one round', `
+Game.reset('playing'); Game.startRun();
+Game.equipWeapon('ruler');
+Game.player.fireCd = 0; Game.fire();
+Game.player.ammo === 23
+`, v => v === true);
+
+check('an empty weapon drops back to the pen, which cannot empty', `
+Game.reset('playing'); Game.startRun();
+Game.equipWeapon('stapler');
+Game.player.ammo = 1; Game.player.fireCd = 0;
+Game.fire();
+[Game.player.weapon, Game.player.ammo].join(',')
+`, v => v === 'pen,Infinity');
+
+check('the compass needle passes through a crowd', `
+Game.reset('playing'); Game.startRun();
+Game.enemies.length = 0; Game.pending.length = 0;
+Game.equipWeapon('compass');
+var a = Game.spawnEnemy('brute', Game.player.x + 90, Game.player.y - 40);
+var b = Game.spawnEnemy('brute', Game.player.x + 190, Game.player.y - 40);
+Game.player.aim = 0;
+Game.bullets.length = 0; Game.player.fireCd = 0;
+Game.fire();
+var hits = 0;
+for (var i = 0; i < 30; i++) {
+  Game.updateBullets(1 / 120);
+  hits = (a.hp < a.maxhp ? 1 : 0) + (b.hp < b.maxhp ? 1 : 0);
+  if (hits === 2) break;
+}
+hits === 2
+`, v => v === true);
+
+check('a plain pen bullet stops at the first body', `
+Game.reset('playing'); Game.startRun();
+Game.enemies.length = 0; Game.pending.length = 0;
+var a = Game.spawnEnemy('brute', Game.player.x + 90, Game.player.y - 40);
+var b = Game.spawnEnemy('brute', Game.player.x + 260, Game.player.y - 40);
+Game.player.aim = 0;
+Game.bullets.length = 0; Game.player.fireCd = 0;
+Game.fire();
+for (var i = 0; i < 40; i++) Game.updateBullets(1 / 120);
+[a.hp < a.maxhp, b.hp < b.maxhp].join(',')
+`, v => v === 'true,false');
+
+check('the eraser ricochets off the margin', `
+Game.reset('playing'); Game.startRun();
+Game.bullets.length = 0;
+Game.bullets.push({ x: 30, y: 360, vx: -600, vy: 0, life: 9, dmg: 40, r: 11,
+                    a: Math.PI, w: 'eraser', len: 0, pierce: 0, bounce: 2, dead: false });
+for (var i = 0; i < 12; i++) Game.updateBullets(1 / 60);
+var bx = Game.bullets[0];
+bx && bx.vx > 0 && bx.x >= 10
+`, v => v === true);
+
+check('a ricochet runs out instead of bouncing for ever', `
+Game.reset('playing'); Game.startRun();
+Game.bullets.length = 0;
+Game.bullets.push({ x: 30, y: 360, vx: -600, vy: 0, life: 9, dmg: 40, r: 11,
+                    a: Math.PI, w: 'eraser', len: 0, pierce: 0, bounce: 0, dead: false });
+Game.bullets[0].x = 5;
+Game.bullets[0].vx = -600;
+for (var i = 0; i < 12; i++) {
+  if (!Game.bullets.length) break;
+  Game.updateBullets(1 / 60);
+}
+/* with no bounces left it may fly off the page, but it must never be
+ * reflected back into play */
+Game.bullets.length === 0 || Game.bullets[0].x < 10
+`, v => v === true);
+
+check('killing an enemy can drop stationery', `
+Game.reset('playing'); Game.startRun();
+Game.pickups.length = 0;
+var dropped = 0;
+for (var i = 0; i < 40; i++) {
+  var e = Game.spawnEnemy('brute', 200 + (i % 7) * 40, 200);
+  Game.hurtEnemy(e, 999, 0);
+}
+Game.pickups.length > 0
+`, v => v === true);
+
+check('walking over a pickup equips it', `
+Game.reset('playing'); Game.startRun();
+Game.pickups.length = 0;
+var k = Game.dropWeapon(Game.player.x, Game.player.y - 20, 'compass');
+Game.updatePickups(0.016);
+[Game.player.weapon, Game.pickups.length].join(',')
+`, v => v === 'compass,0');
+
+check('pickups expire instead of littering the page', `
+Game.reset('playing'); Game.startRun();
+Game.pickups.length = 0;
+Game.dropWeapon(200, 200, 'ruler');
+for (var i = 0; i < 40; i++) Game.updatePickups(0.5);
+Game.pickups.length
+`, n => n === 0);
+
+check('a dropped weapon is always one the game knows', `
+Game.reset('playing'); Game.startRun();
+var ok = true;
+for (var i = 0; i < 60; i++) {
+  Game.pickups.length = 0;            // the page only holds so much clutter
+  var k = Game.dropWeapon(400, 300);
+  if (!k || !Game.WEAPONS[k.w]) ok = false;
+}
+ok
+`, v => v === true);
+
+check('six arms triples a three-shot weapon', `
+Game.reset('playing'); Game.startRun();
+Game.equipWeapon('ruler');
+Game.powers = Object.create(null); Game.powers.arms = true;
+Game.player.arms = 3;
+Game.bullets.length = 0; Game.player.fireCd = 0;
+Game.fire();
+Game.bullets.length === 9
+`, v => v === true);
+
+check('the weapon reset with the run', `
+Game.reset('playing'); Game.startRun();
+[Game.player.weapon, Game.pickups.length].join(',')
+`, v => v === 'pen,0');
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();

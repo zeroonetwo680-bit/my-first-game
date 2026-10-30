@@ -80,8 +80,47 @@ Input.mouse.x = 900; Input.mouse.y = 280;
 for (var i = 0; i < 12; i++) { Input.mouse.down = true; Game.update(1/60); }
 Game.bullets.push({x:700,y:340,vx:900,vy:-200,life:1,dmg:11,r:3,a:-0.2});
 Game.score = 1480; Game.combo = 4; Game.comboTimer = 2; Game.kills = 37;
+Game.dropWeapon(760, 560, 'ruler');
+Game.dropWeapon(360, 190, 'eraser');
 `);
 shot('02-gameplay');
+
+/* ------------------------------------------------------- with a weapon --- */
+run(`
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.wave = 4;
+Game.equipWeapon('ruler');
+var p = Game.player; p.x = 520; p.y = 460;
+Game.spawnEnemy('walker', 780, 300);
+Game.spawnEnemy('runner', 300, 330);
+Game.spawnEnemy('thrower', 940, 520);
+Input.mouse.x = 900; Input.mouse.y = 250;
+Game.update(0.01);
+Input.mouse.down = true;
+p.fireCd = 0; Game.fire();
+for (var i = 0; i < 6; i++) Game.update(1 / 60);
+p.fireCd = 0.2;
+for (var k = 0; k < 5; k++) Game.update(1 / 60);
+Input.mouse.down = false;
+Game.score = 2010; Game.combo = 3; Game.comboTimer = 2;
+`);
+shot('06-weapon-ruler');
+
+run(`
+Game.reset('playing'); Game.startRun();
+Game.pending.length = 0; Game.enemies.length = 0;
+Game.wave = 4;
+Game.equipWeapon('eraser');
+var p = Game.player; p.x = 620; p.y = 470;
+Game.spawnEnemy('brute', 860, 300);
+Game.spawnEnemy('walker', 420, 300);
+Input.mouse.x = 900; Input.mouse.y = 280;
+p.fireCd = 0; Game.fire();
+for (var i = 0; i < 8; i++) Game.update(1 / 60);
+Game.score = 860; Game.combo = 1;
+`);
+shot('07-weapon-eraser');
 
 /* ------------------------------------------------------- six arms ------ */
 run(`
