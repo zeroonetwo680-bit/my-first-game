@@ -1,12 +1,30 @@
 # STICKMAN — What If
 
-An ink-on-paper action game with a house map, connected combat rooms and a guardian.
+An ink-on-paper action game with a house adventure and a separate sword duel against the CPU.
 Every upgrade is a "what if" premise with a real-world baseline on the card.
 
 Play: `stickman/index.html` (served from the repo root, so
 `python3 -m http.server 8000 --bind 0.0.0.0` then `/stickman/`).
 
 ---
+
+## Sword duel — vs CPU
+
+Choose **SWORD DUEL / VS CPU** on the main menu, or press **2**. One opponent,
+one 90-second round: reduce their health to zero, or have more health when time
+runs out. The AI approaches, swings and sometimes blocks.
+
+| Action | Keyboard / mouse | Touch |
+| --- | --- | --- |
+| Move | `A` / `D` or left / right arrows | ◀ / ▶ |
+| Slash | `F`, `J`, space or left click | SLASH |
+| Block | hold `S`, down arrow or right mouse button | hold BLOCK |
+| Dodge | `Shift` (with a direction, or away by default) | DODGE |
+| Pause / return to menu | `P` / `Escape` | tap the paused arena to resume |
+
+The thinner **GUARD** bar drops on blocked hits; when empty, the fighter is
+briefly vulnerable. Dodge has a short cooldown. The result screen lets you retry
+or return to the menu. House progress is unaffected.
 
 ## House adventure
 
@@ -123,7 +141,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 100 checks: house, supplies, swordsman, aim, melee, blast and boss
+node test/smoke.js        # 114 checks: duel, house, supplies, swordsman, aim, melee and boss
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

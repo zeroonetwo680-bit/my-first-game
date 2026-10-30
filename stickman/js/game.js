@@ -342,6 +342,11 @@ var Game = {
   update: function (rawDt) {
     var dt = Math.min(rawDt, 0.05);
     this.t += dt;
+    if (this.state === 'duel') {
+      Duel.update(dt);
+      Input.endFrame();
+      return;
+    }
 
     /* hit-stop: the world holds still for a beat on a big kill */
     if (this.freeze > 0) {
@@ -1179,6 +1184,7 @@ var Game = {
   render: function () {
     var ctx = this.ctx;
     if (!ctx) return;
+    if (this.state === 'duel') { Duel.render(ctx); return; }
     ctx.save();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, this.canvas.width || W, this.canvas.height || H);
@@ -2142,19 +2148,20 @@ var Game = {
     ctx.fillStyle = 'rgba(24,24,28,0.85)';
     ctx.fillText('WALK OVER THE STATIONERY', W / 2 + 10, 496);
 
+    // Two clear mode choices: Enter remains the house shortcut for old players.
     ctx.textAlign = 'center';
-    var blink = 0.55 + Math.sin(this.t * 4) * 0.45;
-    ctx.fillStyle = 'rgba(24,24,28,' + blink + ')';
-    ctx.font = 'bold 20px ui-monospace, Menlo, monospace';
-    ctx.fillText('PRESS ENTER  /  CLICK FOR MAP', W / 2, 566);
-    ctx.fillStyle = 'rgba(24,24,28,0.72)';
-    ctx.font = 'bold 13px ui-monospace, Menlo, monospace';
-    ctx.fillText('E  KUNG FU    •    F  SWORD    •    Q  INK BLAST', W / 2, 592);
+    ctx.fillStyle = '#fffdf7'; ctx.strokeStyle = '#343034'; ctx.lineWidth = 2;
+    ctx.fillRect(425, 526, 430, 47); ctx.strokeRect(425, 526, 430, 47);
+    ctx.fillRect(425, 582, 430, 47); ctx.strokeRect(425, 582, 430, 47);
+    ctx.fillStyle = '#29272a'; ctx.font = 'bold 16px ui-monospace, Menlo, monospace';
+    ctx.fillText('1 / ENTER   HOUSE ADVENTURE', W / 2, 556);
+    ctx.fillStyle = '#b12c30';
+    ctx.fillText('2   SWORD DUEL  /  VS CPU', W / 2, 612);
 
     if (this.best > 0) {
       ctx.fillStyle = 'rgba(24,24,28,0.5)';
       ctx.font = 'bold 14px ui-monospace, Menlo, monospace';
-      ctx.fillText('BEST  ' + this.best, W / 2, 620);
+      ctx.fillText('BEST  ' + this.best, W / 2, 664);
     }
   },
 

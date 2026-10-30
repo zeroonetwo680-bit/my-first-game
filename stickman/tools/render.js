@@ -42,7 +42,7 @@ sandbox.window = sandbox;
 sandbox.self = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
-for (const f of ['core.js', 'rig.js', 'audio.js', 'game.js']) {
+for (const f of ['core.js', 'rig.js', 'audio.js', 'game.js', 'duel.js']) {
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'js', f), 'utf8'), sandbox, { filename: f });
 }
 const run = (code) => vm.runInContext(code, sandbox);
@@ -270,5 +270,15 @@ run(`
 Game.hitCrate(Game.crates[0], 30); Game.player.hp = 55;
 `);
 shot('21-first-aid');
+
+/* Separate sword duel: idle face-off, a slash, a block, and the result. */
+run(`Duel.start(); Duel.player.x=465; Duel.rival.x=805; Game.t=2;`);
+shot('22-duel-faceoff');
+run(`Duel.player.x=560; Duel.rival.x=710; Duel.strike(Duel.player); Duel.player.attack.time=0.23;`);
+shot('23-duel-slash');
+run(`Duel.player.attack=null; Duel.rival.block=true; Duel.rival.guard=40;`);
+shot('24-duel-block');
+run(`Duel.phase='over'; Duel.result='YOU WIN'; Duel.rival.hp=0;`);
+shot('25-duel-result');
 
 console.log('\nframes in', OUT);

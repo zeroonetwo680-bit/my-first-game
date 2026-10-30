@@ -61,8 +61,22 @@
       Sfx.setEnabled(!Sfx.isEnabled());
       return;
     }
+    if (Game.state === 'duel') {
+      if (code === 'Escape') { Duel.exit(); return; }
+      if (code === 'KeyP') { Duel.pause(); return; }
+      if (Duel.phase === 'over' && (code === 'Enter' || code === 'Space')) { Duel.start(); return; }
+      if (Duel.phase === 'fight') {
+        if (code === 'KeyF' || code === 'KeyJ' || code === 'Space') Duel.strike(Duel.player);
+        if (code === 'ShiftLeft' || code === 'ShiftRight') {
+          var dir = (Input.down('KeyD') || Input.down('ArrowRight') ? 1 : 0) - (Input.down('KeyA') || Input.down('ArrowLeft') ? 1 : 0);
+          Duel.dodge(Duel.player, dir);
+        }
+      }
+      return;
+    }
     if (Game.state === 'menu') {
-      if (code === 'Enter' || code === 'Space') Game.openMap();
+      if (code === 'Digit2' || code === 'Numpad2') Duel.start();
+      else if (code === 'Enter' || code === 'Space' || code === 'Digit1' || code === 'Numpad1') Game.openMap();
       return;
     }
     if (Game.state === 'map') {
@@ -110,11 +124,25 @@
     var w = toWorld(e.clientX, e.clientY);
     Input.mouse.x = w.x; Input.mouse.y = w.y;
     if (e.button === 2) {
-      if (Game.state === 'playing') Game.dash();
+      if (Game.state === 'duel' && Duel.phase === 'fight') Duel.mouseBlock = true;
+      else if (Game.state === 'playing') Game.dash();
       e.preventDefault();
       return;
     }
-    if (Game.state === 'menu' || Game.state === 'victory') { Game.openMap(); return; }
+    if (Game.state === 'duel') {
+      if (Duel.phase === 'paused') Duel.pause();
+      else if (Duel.phase === 'over' && w.y >= 400 && w.y <= 455) {
+        if (w.x >= 380 && w.x <= 620) Duel.start();
+        else if (w.x >= 660 && w.x <= 900) Duel.exit();
+      } else if (Duel.phase === 'fight') Duel.strike(Duel.player);
+      return;
+    }
+    if (Game.state === 'menu') {
+      if (w.x >= 425 && w.x <= 855 && w.y >= 582 && w.y <= 629) Duel.start();
+      else Game.openMap();
+      return;
+    }
+    if (Game.state === 'victory') { Game.openMap(); return; }
     if (Game.state === 'map') {
       if (w.x >= 140 && w.x <= 420 && w.y >= 240 && w.y <= 490) Game.startHouse();
       return;
@@ -139,13 +167,28 @@
     }
   });
 
-  window.addEventListener('mouseup', function () { Input.mouse.down = false; });
+  window.addEventListener('mouseup', function (e) { Input.mouse.down = false; if (e.button === 2 && Game.state === 'duel') Duel.mouseBlock = false; });
   canvas.addEventListener('contextmenu', function (e) { e.preventDefault(); });
 
   /* touch: drag the left half to move, drag the right half to aim and fire */
   canvas.addEventListener('touchstart', function (e) {
     Sfx.unlock();
-    if (Game.state === 'menu' || Game.state === 'victory') { Game.openMap(); e.preventDefault(); return; }
+    if (Game.state === 'duel') {
+      var duelTap = toWorld(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (Duel.phase === 'paused') Duel.pause();
+      else if (Duel.phase === 'over' && duelTap.y >= 400 && duelTap.y <= 455) {
+        if (duelTap.x >= 380 && duelTap.x <= 620) Duel.start();
+        else if (duelTap.x >= 660 && duelTap.x <= 900) Duel.exit();
+      }
+      e.preventDefault(); return;
+    }
+    if (Game.state === 'menu') {
+      var menuTap = toWorld(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (menuTap.x >= 425 && menuTap.x <= 855 && menuTap.y >= 582 && menuTap.y <= 629) Duel.start();
+      else Game.openMap();
+      e.preventDefault(); return;
+    }
+    if (Game.state === 'victory') { Game.openMap(); e.preventDefault(); return; }
     if (Game.state === 'map') {
       var tap = toWorld(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
       if (tap.x >= 140 && tap.x <= 420 && tap.y >= 240 && tap.y <= 490) Game.startHouse();
@@ -218,6 +261,7 @@
     Input.keys = Object.create(null);
     Input.mouse.down = false;
     if (Game.state === 'playing') Game.state = 'paused';
+    else if (Game.state === 'duel' && Duel.phase === 'fight') Duel.pause();
   });
 
   window.addEventListener('resize', resize);
@@ -237,6 +281,27 @@
   bindMeleeButton('kungfu-button', 'kungfu');
   bindMeleeButton('sword-button', 'sword');
   bindMeleeButton('blast-button', 'blast');
+
+  var duelControls = document.getElementById('duel-controls');
+  function bindDuelButton(id, kind) {
+    var button = document.getElementById(id);
+    if (!button) return;
+    button.addEventListener('pointerdown', function (e) {
+      e.preventDefault(); e.stopPropagation(); Sfx.unlock();
+      if (button.setPointerCapture) button.setPointerCapture(e.pointerId);
+      if (Game.state !== 'duel' || Duel.phase !== 'fight') return;
+      if (kind === 'attack') Duel.strike(Duel.player);
+      else if (kind === 'dodge') Duel.dodge(Duel.player, (Duel.touch.right ? 1 : 0) - (Duel.touch.left ? 1 : 0));
+      else Duel.touch[kind] = true;
+    });
+    function release(e) { e.preventDefault(); e.stopPropagation(); if (kind in Duel.touch) Duel.touch[kind] = false; }
+    button.addEventListener('pointerup', release);
+    button.addEventListener('pointercancel', release);
+    button.addEventListener('lostpointercapture', release);
+  }
+  bindDuelButton('duel-left', 'left'); bindDuelButton('duel-right', 'right');
+  bindDuelButton('duel-block', 'block'); bindDuelButton('duel-dodge', 'dodge');
+  bindDuelButton('duel-attack', 'attack');
 
   /* --------------------------------------------------------------- boot --- */
   Game.init(canvas);
@@ -262,6 +327,7 @@
     if (guard >= 8) acc = 0;
     Game.render();
     if (meleeControls) meleeControls.hidden = Game.state !== 'playing';
+    if (duelControls) duelControls.hidden = Game.state !== 'duel' || Duel.phase !== 'fight';
     requestAnimationFrame(frame);
   }
   requestAnimationFrame(frame);

@@ -73,7 +73,7 @@ sandbox.self = sandbox;
 sandbox.globalThis = sandbox;
 vm.createContext(sandbox);
 
-for (const f of ['core.js', 'rig.js', 'audio.js', 'game.js']) {
+for (const f of ['core.js', 'rig.js', 'audio.js', 'game.js', 'duel.js']) {
   vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', f), 'utf8'), sandbox, { filename: f });
 }
 
@@ -914,6 +914,92 @@ Game.startHouse(); var box=Game.crates[0]; Game.hitCrate(box, 100); Game.hitCrat
 var one=Game.pickups.filter(k => k.kind==='health').length === 1;
 Game.loadHouseRoom(3);
 one && Game.crates.length===0 && Game.pickups.length===0
+`, v => v === true);
+
+console.log('--- sword duel ---');
+check('duel starts independently of the house with two full-health fighters', `
+Game.startHouse(); var houseRoom = Game.house.room; Duel.start();
+houseRoom === 1 && Game.state === 'duel' && !Game.house && Duel.phase === 'fight' &&
+Duel.player.hp === 100 && Duel.rival.hp === 100 && Duel.clock === 90
+`, v => v === true);
+
+check('slash damages the opponent in reach only once', `
+Duel.start(); var p=Duel.player, e=Duel.rival; p.x=500;e.x=640;
+Duel.strike(p); Duel.hit(p,e); Duel.hit(p,e);
+e.hp===80 && p.attack.hit
+`, v => v === true);
+
+check('slash cannot hit out of reach or behind the attacker', `
+Duel.start(); var p=Duel.player,e=Duel.rival;p.x=500;e.x=800;
+Duel.strike(p);Duel.hit(p,e);var far=e.hp===100;
+p.attack=null;p.attackCd=0;e.x=400;p.facing=1;Duel.strike(p);Duel.hit(p,e);
+far && e.hp===100
+`, v => v === true);
+
+check('blocking absorbs a hit but spends guard', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;
+e.block=true;Duel.strike(p);Duel.hit(p,e);
+e.hp===100 && e.guard===70
+`, v => v === true);
+
+check('depleted guard breaks and cannot block', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;e.guard=20;e.block=true;
+Duel.strike(p);Duel.hit(p,e);
+e.hp===100 && e.guard===0 && e.broken>0 && !e.block
+`, v => v === true);
+
+check('dodge has temporary invulnerability and a cooldown', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;
+var dodged=Duel.dodge(e,1);Duel.strike(p);Duel.hit(p,e);
+dodged && e.hp===100 && e.dodgeCd>0 && !Duel.dodge(e,1)
+`, v => v === true);
+
+check('attacks have a real windup and do not hit until active', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;e.think=50;
+Duel.strike(p);Duel.update(0.05);var early=e.hp===100;
+for(var i=0;i<5;i++) Duel.update(0.05);
+early && e.hp===80
+`, v => v === true);
+
+check('holding block prevents starting an attack', `
+Duel.start(); var p=Duel.player;Input.keys.KeyS=true;Duel.update(0.01);
+var ok=p.block && !Duel.strike(p);Input.keys.KeyS=false;ok
+`, v => v === true);
+
+check('CPU approaches and attacks an idle player', `
+Duel.start();var before=Duel.rival.x;
+for(var i=0;i<1000 && Duel.phase==='fight';i++) Game.update(1/120);
+Duel.rival.x < before && Duel.player.hp < 100
+`, v => v === true);
+
+check('KO determines winner and the result stops time', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;e.hp=20;e.think=50;
+Duel.strike(p);for(var i=0;i<30;i++) Game.update(1/120);
+var clock=Duel.clock;Game.update(0.05);
+Duel.phase==='over' && Duel.result==='YOU WIN' && Duel.clock===clock
+`, v => v === true);
+
+check('timeout compares health and can result in a draw', `
+Duel.start();Duel.clock=0.01;Duel.player.hp=60;Duel.rival.hp=60;Duel.update(0.02);
+Duel.phase==='over' && Duel.result==='DRAW'
+`, v => v === true);
+
+check('pause prevents damage, movement and timer advancing', `
+Duel.start();Duel.pause();var x=Duel.player.x,clock=Duel.clock;
+Input.keys.KeyD=true;Game.update(0.05);Input.keys.KeyD=false;
+var stopped=Duel.player.x===x && Duel.clock===clock && !Duel.strike(Duel.player);
+Duel.pause(); stopped && Duel.phase==='fight'
+`, v => v === true);
+
+check('exit and rematch restore state without affecting house progress', `
+Store.set('house1_complete',true);Duel.start();Duel.player.hp=10;Duel.start();
+var fresh=Duel.player.hp===100 && Duel.clock===90;Duel.exit();
+fresh && Game.state==='menu' && Store.get('house1_complete',false)
+`, v => v === true);
+
+check('real duel render runs for fight, paused and result', `
+Game.init(document.getElementById('game'));Duel.start();Game.render();Duel.pause();Game.render();
+Duel.phase='over';Duel.result='YOU WIN';Game.render();true
 `, v => v === true);
 
 console.log('--- robustness ---');

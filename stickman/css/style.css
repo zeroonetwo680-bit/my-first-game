@@ -62,3 +62,20 @@ noscript p {
   }
   #melee-controls button:active { background: #e5cbc8; }
 }
+
+/* The duel has its own touch controls, separate from adventure controls. */
+#duel-controls { display: none; }
+@media (pointer: coarse) {
+  #duel-controls:not([hidden]) {
+    position: fixed; bottom: max(10px, env(safe-area-inset-bottom));
+    left: 50%; transform: translateX(-50%); display: flex; gap: 5px;
+    z-index: 3; touch-action: none;
+  }
+  #duel-controls button {
+    min-width: 54px; min-height: 46px; padding: 8px;
+    border: 1px solid #544c43; border-radius: 5px;
+    color: #232124; background: rgba(246,243,235,0.94);
+    font: bold 11px ui-monospace, monospace; touch-action: none;
+  }
+  #duel-controls button:active { background: #e5cbc8; }
+}
