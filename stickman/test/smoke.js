@@ -703,6 +703,56 @@ kick.legR.foot.x > rest.legR.foot.x + 30 &&
   Math.abs(windup.armPairs[0].right.hand.y - finish.armPairs[0].right.hand.y) > 30
 `, v => v === true);
 
+console.log('--- house adventure ---');
+check('map starts a three-room house with a locked exit', `
+Game.openMap(); var map = Game.state === 'map'; Game.startHouse();
+map && Game.state === 'playing' && Game.house.room === 1 && !Game.house.exitOpen && Game.pending.length === 4
+`, v => v === true);
+
+check('door stays locked while enemies or spawns remain', `
+Game.startHouse(); Game.player.x = W - 80; Game.player.y = H/2;
+Game.updateHouse(1); Game.house.room === 1 && !Game.house.exitOpen
+`, v => v === true);
+
+check('clearing a room opens door and crossing carries health, power and weapon', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+Game.player.hp = 70; Game.equipWeapon('ruler'); Game.player.ammo = 8; Game.powers.arms = true;
+Game.updateHouse(0.7); var open = Game.house.exitOpen;
+Game.player.x = W - 80; Game.player.y = H/2; Game.updateHouse(0.01);
+open && Game.house.room === 2 && Game.player.hp === 85 && Game.player.weapon === 'ruler' && Game.player.ammo === 8 && Game.powers.arms && Game.pending.length === 5
+`, v => v === true);
+
+check('second door offers a power then opens the boss room', `
+Game.startHouse(); Game.loadHouseRoom(2); Game.pending.length = 0; Game.enemies.length = 0;
+Game.updateHouse(0.7); Game.player.x = W - 80; Game.player.y = H/2; Game.updateHouse(0.01);
+var offered = Game.state === 'power' && Game.offer.length === 2;
+Game.choosePower(0);
+offered && Game.state === 'playing' && Game.house.room === 3 && Game.pending[0].type === 'boss'
+`, v => v === true);
+
+check('boss telegraphs then charges and returns to idle', `
+Game.startHouse(); Game.loadHouseRoom(3); Game.pending.length = 0;
+var e = Game.spawnEnemy('boss', 900, 360); e.bossTimer = 0;
+Game.updateEnemies(0.01); var windup = e.bossPhase === 'windup';
+Game.updateEnemies(0.9); var charge = e.bossPhase === 'charge';
+var x = e.x; Game.updateEnemies(0.2); var moved = e.x < x;
+Game.updateEnemies(0.5);
+windup && charge && moved && e.bossPhase === 'idle'
+`, v => v === true);
+
+check('boss defeat completes house, saves completion and never respawns', `
+Game.startHouse(); Game.loadHouseRoom(3); Game.pending.length = 0; Game.enemies.length = 0;
+var e = Game.spawnEnemy('boss', 900, 360); Game.killEnemy(e, 0);
+Game.updateEnemies(0.5); Game.updateHouse(0.7);
+Game.state === 'victory' && Store.get('house1_complete', false) && Game.pending.length === 0
+`, v => v === true);
+
+check('map, house, boss and victory draw without exceptions', `
+Game.openMap(); Game.render(); Game.startHouse(); Game.render(); Game.loadHouseRoom(3);
+Game.pending.length = 0; var e = Game.spawnEnemy('boss', 900, 360); e.bossPhase = 'windup'; Game.render();
+Game.state = 'victory'; Game.render(); true
+`, v => v === true);
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();

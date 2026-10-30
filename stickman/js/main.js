@@ -62,11 +62,21 @@
       return;
     }
     if (Game.state === 'menu') {
-      if (code === 'Enter' || code === 'Space') Game.startRun();
+      if (code === 'Enter' || code === 'Space') Game.openMap();
+      return;
+    }
+    if (Game.state === 'map') {
+      if (code === 'Enter' || code === 'Space') Game.startHouse();
+      return;
+    }
+    if (Game.state === 'victory') {
+      if (code === 'Enter' || code === 'Space') Game.openMap();
       return;
     }
     if (Game.state === 'dead') {
-      if (code === 'Enter' || code === 'Space') Game.startRun();
+      if (code === 'Enter' || code === 'Space') {
+        if (Game.house) Game.startHouse(); else Game.startRun();
+      }
       return;
     }
     if (Game.state === 'power') {
@@ -103,11 +113,16 @@
       e.preventDefault();
       return;
     }
-    Input.mouse.down = true;
-    if (Game.state === 'menu' || Game.state === 'dead') {
-      Game.startRun();
+    if (Game.state === 'menu' || Game.state === 'victory') { Game.openMap(); return; }
+    if (Game.state === 'map') {
+      if (w.x >= 140 && w.x <= 420 && w.y >= 240 && w.y <= 490) Game.startHouse();
       return;
     }
+    if (Game.state === 'dead') {
+      if (Game.house) Game.startHouse(); else Game.startRun();
+      return;
+    }
+    Input.mouse.down = true;
     if (Game.state === 'power') {
       /* click a card */
       var cw = 430, ch = 300, gap = 44;
@@ -129,6 +144,25 @@
   /* touch: drag the left half to move, drag the right half to aim and fire */
   canvas.addEventListener('touchstart', function (e) {
     Sfx.unlock();
+    if (Game.state === 'menu' || Game.state === 'victory') { Game.openMap(); e.preventDefault(); return; }
+    if (Game.state === 'map') {
+      var tap = toWorld(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (tap.x >= 140 && tap.x <= 420 && tap.y >= 240 && tap.y <= 490) Game.startHouse();
+      e.preventDefault(); return;
+    }
+    if (Game.state === 'dead') {
+      if (Game.house) Game.startHouse(); else Game.startRun();
+      e.preventDefault(); return;
+    }
+    if (Game.state === 'power') {
+      var choice = toWorld(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      var left = (W - 904) / 2;
+      if (choice.y >= 226 && choice.y <= 526) {
+        if (choice.x >= left && choice.x <= left + 430) Game.choosePower(0);
+        else if (choice.x >= left + 474 && choice.x <= left + 904) Game.choosePower(1);
+      }
+      e.preventDefault(); return;
+    }
     for (var i = 0; i < e.changedTouches.length; i++) {
       var t = e.changedTouches[i];
       var w = toWorld(t.clientX, t.clientY);
@@ -143,11 +177,6 @@
       }
     }
     Input.touch.active = true;
-    if (Game.state === 'menu' || Game.state === 'dead') {
-      Game.startRun();
-    } else if (Game.state === 'power') {
-      Game.choosePower(Input.mouse.x < W / 2 ? 0 : 1);
-    }
     e.preventDefault();
   }, { passive: false });
 

@@ -213,4 +213,22 @@ for (const move of ['punch', 'kick', 'sword']) {
   shot('11-combat-' + move);
 }
 
+/* House adventure: map, unlocked exit, boss and completion. */
+run("Game.openMap(); Game.t = 1;");
+shot('12-house-map');
+run(`
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+Game.updateHouse(0.7); Game.banner = 0; Game.player.x = 720; Game.player.y = 390; Game.player.iframes = 0;
+`);
+shot('13-house-door');
+run(`
+Game.loadHouseRoom(3); Game.pending.length = 0;
+var boss = Game.spawnEnemy('boss', 900, 410); boss.bossPhase = 'windup';
+boss.chargeX = -1; boss.chargeY = 0; Game.banner = 0;
+Game.player.x = 420; Game.player.y = 410; Game.player.aim = 0; Game.player.iframes = 0;
+`);
+shot('14-house-boss');
+run("Game.score=1840; Game.kills=10; Game.state='victory';");
+shot('15-house-victory');
+
 console.log('\nframes in', OUT);

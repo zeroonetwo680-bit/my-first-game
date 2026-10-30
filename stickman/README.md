@@ -1,13 +1,25 @@
 # STICKMAN — What If
 
-A twin-stick arena survival game drawn as ink on a sheet of paper. Every upgrade
-is a "what if" premise with the real-world number printed on the card: the power
-is fiction, the baseline beside it is not.
+An ink-on-paper action game with a house map, connected combat rooms and a guardian.
+Every upgrade is a "what if" premise with a real-world baseline on the card.
 
 Play: `stickman/index.html` (served from the repo root, so
 `python3 -m http.server 8000 --bind 0.0.0.0` then `/stickman/`).
 
 ---
+
+## House adventure
+
+Open the map from the menu, then select **The First House**. Clear each room to
+unlock its door on the right; walk through to reach the next room. The first two
+rooms have different enemy groups, and the third contains the Ink Guardian, who
+telegraphs a charge with a red dashed line. Between the second room and the
+boss, choose a what-if power. Health recovers a little on entering each room;
+your score, equipped weapon, ammunition and powers carry between rooms.
+
+Defeat the guardian to complete the house. Completion is saved locally in the
+browser and marked on the map. Houses 02 and 03 are placeholders, not playable
+levels yet. Dying restarts the first house; there is no mid-house save.
 
 ## The idea
 
@@ -90,7 +102,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 74 checks: rig, melee, weapons, muzzle, powers, 2 minutes
+node test/smoke.js        # 81 checks: house, boss, rig, melee, weapons and powers
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

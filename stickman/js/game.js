@@ -177,9 +177,10 @@ var Game = {
     this.offer = []; this.sel = 0; this.runTime = 0;
     this.pickups.length = 0;
     this.player = null;
+    this.house = null;
   },
 
-  startRun: function () {
+  startRun: function (skipWave) {
     this.reset('playing');
     this.player = {
       x: W / 2, y: H / 2 + 60, vx: 0, vy: 0,
@@ -191,8 +192,82 @@ var Game = {
       weapon: 'pen', ammo: Infinity, muzzle: 0,
       attack: null, meleeCd: 0, queuedMelee: null, comboStep: 0, comboTimer: 0
     };
-    this.nextWave();
+    if (!skipWave) this.nextWave();
     return this.player;
+  },
+
+  // The map and house run are separate from the original endless arena.
+  openMap: function () {
+    this.reset('map');
+  },
+
+  startHouse: function () {
+    this.startRun(true);
+    this.house = { room: 0, exitOpen: false, waitingForPower: false };
+    this.loadHouseRoom(1);
+  },
+
+  loadHouseRoom: function (room) {
+    if (!this.house || room < 1 || room > 3) return;
+    this.house.room = room;
+    this.house.exitOpen = false;
+    this.house.waitingForPower = false;
+    this.wave = room;
+    this.waveTimer = 0;
+    this.toast = 0; this.toastText = '';
+    this.enemies.length = 0; this.pending.length = 0;
+    this.bullets.length = 0; this.shots.length = 0;
+    this.pickups.length = 0; this.parts.length = 0;
+    this.marks.length = 0; this.splats.length = 0;
+    var p = this.player;
+    p.x = room === 1 ? 250 : 160; p.y = H / 2 + 30;
+    p.vx = p.vy = 0; p.attack = null; p.queuedMelee = null;
+    p.iframes = Math.max(p.iframes, 0.6);
+    if (room > 1) p.hp = Math.min(p.maxhp, p.hp + 15);
+    var groups = [[], ['walker', 'walker', 'runner', 'walker'],
+      ['runner', 'thrower', 'walker', 'runner', 'brute'], ['boss']];
+    var types = groups[room];
+    for (var i = 0; i < types.length; i++) {
+      var pos = room === 3 ? { x: 960, y: 360 } : this.edgePoint();
+      // Do not spawn right on top of the entrance.
+      if (pos.x < 380) pos.x = 600 + this.rng() * 400;
+      this.pending.push({ type: types[i], x: pos.x, y: pos.y, t: 0.65 + i * 0.4 });
+    }
+    this.bannerText = room === 3 ? 'THE INK GUARDIAN' : 'ROOM ' + room + ' / 3';
+    this.banner = 1.6;
+    Sfx.wave();
+  },
+
+  updateHouse: function (dt) {
+    var h = this.house, p = this.player;
+    if (!h || !p || p.dead || this.state !== 'playing') return;
+    if (!h.exitOpen && this.pending.length === 0 && this.enemies.length === 0) {
+      this.waveTimer += dt;
+      if (this.waveTimer >= 0.65) {
+        if (h.room === 3) {
+          Store.set('house1_complete', true);
+          this.best = Math.max(this.best, this.score);
+          Store.set('best', this.best);
+          this.state = 'victory';
+          this.shake = 0;
+          Sfx.choose();
+        } else {
+          h.exitOpen = true;
+          this.toastText = 'ROOM CLEAR - WALK TO THE OPEN DOOR';
+          this.toast = 3;
+          Sfx.pickup();
+        }
+      }
+    }
+    if (h.exitOpen && p.x > W - 112 && Math.abs(p.y - H / 2) < 80) {
+      if (h.room === 2) {
+        h.exitOpen = false;
+        h.waitingForPower = true;
+        this.offerPowers();
+      } else {
+        this.loadHouseRoom(h.room + 1);
+      }
+    }
   },
 
   /* --------------------------------------------------------------- waves --- */
@@ -238,7 +313,8 @@ var Game = {
       walker: { hp: 22, speed: 62, size: 108, dmg: 9, r: 19, score: 10 },
       runner: { hp: 14, speed: 118, size: 96, dmg: 7, r: 16, score: 14 },
       thrower: { hp: 18, speed: 48, size: 104, dmg: 8, r: 18, score: 18 },
-      brute: { hp: 70, speed: 42, size: 152, dmg: 20, r: 30, score: 40 }
+      brute: { hp: 70, speed: 42, size: 152, dmg: 20, r: 30, score: 40 },
+      boss: { hp: 260, speed: 48, size: 205, dmg: 18, r: 38, score: 300 }
     }[type] || { hp: 20, speed: 60, size: 54, dmg: 8, r: 16, score: 10 };
     var e = {
       type: type, x: x, y: y, vx: 0, vy: 0,
@@ -247,7 +323,7 @@ var Game = {
       phase: this.rng() * TAU, t: 0, hurt: 0, stun: 0,
       attackCd: 0, throwCd: 0.8 + this.rng() * 1.2,
       seed: 1 + Math.floor(this.rng() * 9999),
-      dead: false, deadT: 0
+      dead: false, deadT: 0, bossPhase: 'idle', bossTimer: 2.1, chargeX: 0, chargeY: 0
     };
     this.enemies.push(e);
     return e;
@@ -283,12 +359,16 @@ var Game = {
         this.comboTimer -= dt;
         if (this.comboTimer <= 0) this.combo = 0;
       }
-      if (this.enemies.length === 0 && this.pending.length === 0 && this.waveTimer <= 0) {
-        this.waveTimer = 1.4;
-      }
-      if (this.waveTimer > 0) {
-        this.waveTimer -= dt;
-        if (this.waveTimer <= 0) this.betweenWaves();
+      if (this.house) {
+        this.updateHouse(dt);
+      } else {
+        if (this.enemies.length === 0 && this.pending.length === 0 && this.waveTimer <= 0) {
+          this.waveTimer = 1.4;
+        }
+        if (this.waveTimer > 0) {
+          this.waveTimer -= dt;
+          if (this.waveTimer <= 0) this.betweenWaves();
+        }
       }
     } else if (this.state === 'dead') {
       this.player.deadT += dt;
@@ -587,7 +667,22 @@ var Game = {
       var ax = (p.x - e.x) / d, ay = (p.y - e.y) / d;
       var spd = e.speed * (e.stun > 0 ? 0.15 : 1);
 
-      if (e.type === 'thrower') {
+      if (e.type === 'boss') {
+        e.bossTimer -= dt;
+        if (e.bossPhase === 'idle') {
+          e.x += ax * spd * dt; e.y += ay * spd * dt;
+          if (e.bossTimer <= 0) {
+            e.bossPhase = 'windup'; e.bossTimer = 0.85;
+            e.chargeX = ax; e.chargeY = ay;
+          }
+        } else if (e.bossPhase === 'windup') {
+          if (e.bossTimer <= 0) { e.bossPhase = 'charge'; e.bossTimer = 0.48; }
+        } else {
+          e.x = clamp(e.x + e.chargeX * 330 * dt, 40, W - 40);
+          e.y = clamp(e.y + e.chargeY * 330 * dt, 40, H - 40);
+          if (e.bossTimer <= 0) { e.bossPhase = 'idle'; e.bossTimer = 2.2; }
+        }
+      } else if (e.type === 'thrower') {
         /* keep a working distance, then throw */
         var want = 250;
         var push = d < want ? -1 : d > want + 90 ? 1 : 0;
@@ -740,7 +835,7 @@ var Game = {
     e.hp -= dmg;
     e.hurt = 0.12;
     e.stun = Math.min(0.35, e.stun + 0.12);
-    var push = e.type === 'brute' ? 26 : 90;
+    var push = (e.type === 'brute' || e.type === 'boss') ? 26 : 90;
     e.x += Math.cos(dirA) * push * 0.12;
     e.y += Math.sin(dirA) * push * 0.12;
     this.ink(e.x, e.y - e.size * 0.4, 2 + Math.random() * 2, 0.35);
@@ -773,7 +868,7 @@ var Game = {
     this.splat(e.x, e.y);
 
     /* a weapon every few kills, more often from the heavy ones */
-    var chance = e.type === 'brute' ? 0.55 : 0.14;
+    var chance = e.type === 'boss' ? 0 : e.type === 'brute' ? 0.55 : 0.14;
     if (this.rng() < chance) this.dropWeapon(e.x, e.y);
     this.shake = Math.min(14, this.shake + (e.type === 'brute' ? 10 : 4));
     if (e.type === 'brute') this.freeze = 0.07;
@@ -902,7 +997,11 @@ var Game = {
 
   offerPowers: function () {
     var pool = this.POWERS.filter(function (p) { return !Game.powers[p.id]; }, this);
-    if (pool.length === 0) { this.nextWave(); return; }
+    if (pool.length === 0) {
+      if (this.house && this.house.waitingForPower) this.loadHouseRoom(3);
+      else this.nextWave();
+      return;
+    }
     /* two distinct choices */
     var a = Math.floor(this.rng() * pool.length);
     var first = pool[a];
@@ -926,7 +1025,8 @@ var Game = {
     this.bannerText = 'WHAT IF ' + p.short + '?';
     this.banner = 1.6;
     Sfx.choose();
-    this.nextWave();
+    if (this.house && this.house.waitingForPower) this.loadHouseRoom(3);
+    else this.nextWave();
   },
 
   /* -------------------------------------------------------------- render --- */
@@ -948,6 +1048,7 @@ var Game = {
     }
 
     this.drawPaper(ctx);
+    if (this.house && this.state !== 'map') this.drawHouseRoom(ctx);
     this.drawGround(ctx);
     this.drawMarks(ctx);
     this.drawPickups(ctx);
@@ -967,10 +1068,99 @@ var Game = {
     this.drawHUD(ctx);
 
     if (this.state === 'menu') this.drawMenu(ctx);
+    if (this.state === 'map') this.drawMap(ctx);
+    if (this.state === 'victory') this.drawVictory(ctx);
     if (this.state === 'power') this.drawPower(ctx);
     if (this.state === 'dead') this.drawDead(ctx);
     if (this.state === 'paused') this.drawPaused(ctx);
 
+    ctx.restore();
+  },
+
+  drawHouseRoom: function (ctx) {
+    var h = this.house;
+    ctx.save();
+    // Ruled-paper rooms are distinct pages of the same house, not a loading screen.
+    ctx.strokeStyle = 'rgba(42,38,35,0.22)'; ctx.lineWidth = 3;
+    ctx.strokeRect(86, 95, W - 172, H - 160);
+    ctx.fillStyle = 'rgba(35,32,30,0.38)';
+    ctx.textAlign = 'left'; ctx.font = 'bold 13px ui-monospace, monospace';
+    ctx.fillText(['', '01 / THE ENTRY', '02 / THE HALL', '03 / GUARDIAN ROOM'][h.room], 105, 121);
+    if (h.room === 2) {
+      ctx.strokeStyle = 'rgba(45,42,40,0.18)'; ctx.lineWidth = 2;
+      ctx.strokeRect(530, 130, 220, 58);
+      ctx.beginPath(); ctx.moveTo(545, 160); ctx.lineTo(735, 160); ctx.stroke();
+    } else if (h.room === 3) {
+      ctx.strokeStyle = 'rgba(186,52,52,0.22)'; ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(W / 2, H / 2, 190, 0, TAU); ctx.stroke();
+    }
+    if (h.room < 3) {
+      var x = W - 112, y = H / 2;
+      ctx.fillStyle = h.exitOpen ? '#fdfbf2' : '#b9b4aa';
+      ctx.strokeStyle = h.exitOpen ? '#c62b30' : '#5d5852'; ctx.lineWidth = 4;
+      ctx.fillRect(x, y - 58, 42, 116); ctx.strokeRect(x, y - 58, 42, 116);
+      ctx.fillStyle = h.exitOpen ? '#c62b30' : '#625c55';
+      ctx.beginPath(); ctx.arc(x + 30, y, 3, 0, TAU); ctx.fill();
+      ctx.textAlign = 'right'; ctx.font = 'bold 12px ui-monospace, monospace';
+      ctx.fillText(h.exitOpen ? 'NEXT ROOM  →' : 'CLEAR TO OPEN', x - 10, y - 69);
+    }
+    ctx.restore();
+  },
+
+  drawMap: function (ctx) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(246,243,235,0.98)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#a52c2e';
+    ctx.font = 'bold 13px ui-monospace, monospace'; ctx.fillText('THE PAGE / CHAPTER 01', W / 2, 83);
+    ctx.fillStyle = '#202024'; ctx.font = 'bold 48px ui-monospace, monospace';
+    ctx.fillText('THE HOUSE MAP', W / 2, 140);
+    ctx.fillStyle = '#77716a'; ctx.font = '15px ui-monospace, monospace';
+    ctx.fillText('Clear the rooms. Find the guardian. Open the way.', W / 2, 175);
+    ctx.strokeStyle = '#bab3a9'; ctx.lineWidth = 3; ctx.setLineDash([7, 9]);
+    ctx.beginPath(); ctx.moveTo(320, 353); ctx.lineTo(960, 353); ctx.stroke(); ctx.setLineDash([]);
+    var cards = [
+      {x: 140, title: 'THE FIRST HOUSE', sub: '3 ROOMS  /  1 GUARDIAN', active: true},
+      {x: 500, title: 'HOUSE 02', sub: 'COMING SOON', active: false},
+      {x: 860, title: 'HOUSE 03', sub: 'COMING SOON', active: false}
+    ];
+    for (var i = 0; i < cards.length; i++) {
+      var c = cards[i], x = c.x, y = 240;
+      ctx.fillStyle = c.active ? '#fffdf7' : '#e9e5dc';
+      ctx.strokeStyle = c.active ? '#242326' : '#c6c1b7'; ctx.lineWidth = c.active ? 3 : 1.5;
+      ctx.fillRect(x, y, 280, 250); ctx.strokeRect(x, y, 280, 250);
+      ctx.strokeStyle = c.active ? '#2c2a2b' : '#aaa59d'; ctx.lineWidth = 4;
+      ctx.beginPath(); ctx.moveTo(x + 80, y + 112); ctx.lineTo(x + 140, y + 60);
+      ctx.lineTo(x + 200, y + 112); ctx.lineTo(x + 200, y + 165);
+      ctx.lineTo(x + 80, y + 165); ctx.closePath(); ctx.stroke();
+      ctx.strokeRect(x + 130, y + 128, 22, 37);
+      ctx.fillStyle = c.active ? '#a82e30' : '#aaa59d';
+      ctx.fillRect(x + 93, y + 129, 22, 19); ctx.fillRect(x + 165, y + 129, 22, 19);
+      ctx.fillStyle = c.active ? '#222126' : '#99948c'; ctx.font = 'bold 17px ui-monospace, monospace';
+      ctx.fillText(c.title, x + 140, y + 200);
+      ctx.fillStyle = c.active ? '#a82e30' : '#aaa59d'; ctx.font = 'bold 11px ui-monospace, monospace';
+      ctx.fillText(c.sub, x + 140, y + 224);
+    }
+    ctx.fillStyle = '#242326'; ctx.font = 'bold 17px ui-monospace, monospace';
+    ctx.fillText('ENTER / CLICK THE FIRST HOUSE TO PLAY', W / 2, 552);
+    if (Store.get('house1_complete', false)) {
+      ctx.fillStyle = '#a82e30'; ctx.font = 'bold 14px ui-monospace, monospace';
+      ctx.fillText('FIRST HOUSE CLEARED  ✓', W / 2, 587);
+    }
+    ctx.restore();
+  },
+
+  drawVictory: function (ctx) {
+    ctx.save(); ctx.fillStyle = 'rgba(246,243,235,0.96)'; ctx.fillRect(0, 0, W, H);
+    ctx.textAlign = 'center'; ctx.fillStyle = '#aa2e30'; ctx.font = 'bold 14px ui-monospace, monospace';
+    ctx.fillText('CHAPTER 01  /  COMPLETE', W / 2, 190);
+    ctx.fillStyle = '#202024'; ctx.font = 'bold 52px ui-monospace, monospace';
+    ctx.fillText('HOUSE CLEARED', W / 2, 265);
+    ctx.fillStyle = '#716a62'; ctx.font = '17px ui-monospace, monospace';
+    ctx.fillText('The Ink Guardian has fallen.', W / 2, 310);
+    ctx.fillStyle = '#202024'; ctx.font = 'bold 20px ui-monospace, monospace';
+    ctx.fillText('SCORE  ' + this.score + '     KILLS  ' + this.kills, W / 2, 380);
+    ctx.fillStyle = '#a82e30'; ctx.font = 'bold 16px ui-monospace, monospace';
+    ctx.fillText('ENTER / CLICK TO RETURN TO THE MAP', W / 2, 480);
     ctx.restore();
   },
 
@@ -1201,6 +1391,12 @@ var Game = {
         aim: e.dead ? null : (e.type === 'thrower' ? a : null),
         crouch: e.dead ? 1 : 0
       });
+      if (!e.dead && e.type === 'boss' && e.bossPhase === 'windup') {
+        ctx.save(); ctx.strokeStyle = 'rgba(194,45,48,0.7)'; ctx.lineWidth = 3;
+        ctx.setLineDash([8, 8]); ctx.beginPath();
+        ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.chargeX * 260, e.y + e.chargeY * 260);
+        ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+      }
       if (e.dead) {
         /* fall over and fade out */
         ctx.save();
@@ -1210,11 +1406,19 @@ var Game = {
         ctx.restore();
       } else {
         Rig.draw(ctx, p, {
-          color: e.type === 'brute' ? '#141417' : '#2f2f36',
-          lw: e.type === 'brute' ? 6.5 : 4.2,
+          color: (e.type === 'brute' || e.type === 'boss') ? '#141417' : '#2f2f36',
+          lw: e.type === 'boss' ? 8 : e.type === 'brute' ? 6.5 : 4.2,
           flash: e.hurt > 0 ? 'rgba(220,60,60,0.9)' : null,
           face: e.type !== 'brute'
         });
+        if (e.type === 'boss') {
+          ctx.save(); ctx.strokeStyle = '#bb2f32'; ctx.lineWidth = 4;
+          ctx.beginPath(); ctx.moveTo(p.head.x - 20, p.head.y - p.headR + 4);
+          ctx.lineTo(p.head.x - 15, p.head.y - p.headR - 15);
+          ctx.lineTo(p.head.x, p.head.y - p.headR - 5);
+          ctx.lineTo(p.head.x + 15, p.head.y - p.headR - 15);
+          ctx.lineTo(p.head.x + 20, p.head.y - p.headR + 4); ctx.stroke(); ctx.restore();
+        }
       }
     }
   },
@@ -1503,10 +1707,10 @@ var Game = {
     ctx.textAlign = 'center';
     ctx.fillStyle = 'rgba(24,24,28,0.45)';
     ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
-    ctx.fillText('WAVE', W / 2, by - 4);
+    ctx.fillText(this.house ? 'ROOM' : 'WAVE', W / 2, by - 4);
     ctx.fillStyle = 'rgba(24,24,28,0.85)';
     ctx.font = 'bold 30px ui-monospace, Menlo, monospace';
-    ctx.fillText(('0' + this.wave).slice(-2), W / 2, by + 26);
+    ctx.fillText(this.house ? this.house.room + ' / 3' : ('0' + this.wave).slice(-2), W / 2, by + 26);
 
     /* score */
     ctx.textAlign = 'right';
@@ -1521,6 +1725,16 @@ var Game = {
       ctx.fillStyle = 'rgba(190,50,50,0.85)';
       ctx.font = 'bold 18px ui-monospace, Menlo, monospace';
       ctx.fillText('x' + this.combo + ' COMBO', W - 30, by + 46);
+    }
+
+    if (this.house && this.house.room === 3) {
+      var boss = this.enemies.find(function (e) { return e.type === 'boss' && !e.dead; });
+      if (boss) {
+        ctx.textAlign = 'center'; ctx.font = 'bold 12px ui-monospace, monospace';
+        ctx.fillStyle = '#a62e30'; ctx.fillText('THE INK GUARDIAN', W / 2, 96);
+        ctx.fillStyle = 'rgba(40,35,35,0.2)'; ctx.fillRect(W / 2 - 180, 104, 360, 9);
+        ctx.fillStyle = '#b62e32'; ctx.fillRect(W / 2 - 180, 104, 360 * clamp(boss.hp / boss.maxhp, 0, 1), 9);
+      }
     }
 
     /* the weapon in hand, bottom right, with its ammunition as ticks */
@@ -1696,7 +1910,7 @@ var Game = {
     var blink = 0.55 + Math.sin(this.t * 4) * 0.45;
     ctx.fillStyle = 'rgba(24,24,28,' + blink + ')';
     ctx.font = 'bold 20px ui-monospace, Menlo, monospace';
-    ctx.fillText('PRESS ENTER  /  CLICK TO START', W / 2, 566);
+    ctx.fillText('PRESS ENTER  /  CLICK FOR MAP', W / 2, 566);
     ctx.fillStyle = 'rgba(24,24,28,0.72)';
     ctx.font = 'bold 13px ui-monospace, Menlo, monospace';
     ctx.fillText('E  KUNG FU COMBO     •     F  SWORD', W / 2, 592);
