@@ -68,14 +68,15 @@ noscript p {
 @media (pointer: coarse) {
   #duel-controls:not([hidden]) {
     position: fixed; bottom: max(10px, env(safe-area-inset-bottom));
-    left: 50%; transform: translateX(-50%); display: flex; gap: 5px;
+    left: 50%; transform: translateX(-50%); display: grid; gap: 4px;
+    width: min(450px, calc(100vw - 12px)); grid-template-columns: repeat(7, minmax(0, 1fr));
     z-index: 3; touch-action: none;
   }
   #duel-controls button {
-    min-width: 54px; min-height: 46px; padding: 8px;
+    min-width: 0; min-height: 46px; padding: 3px;
     border: 1px solid #544c43; border-radius: 5px;
     color: #232124; background: rgba(246,243,235,0.94);
-    font: bold 11px ui-monospace, monospace; touch-action: none;
+    font: bold clamp(8px, 2.6vw, 11px) ui-monospace, monospace; touch-action: none;
   }
   #duel-controls button:active { background: #e5cbc8; }
 }

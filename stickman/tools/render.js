@@ -281,4 +281,15 @@ shot('24-duel-block');
 run(`Duel.phase='over'; Duel.result='YOU WIN'; Duel.rival.hp=0;`);
 shot('25-duel-result');
 
+
+/* New duel poses: an airborne slash, rising cut, thrust and heavy overhead. */
+run(`Duel.start(); Duel.player.x=500; Duel.rival.x=700; Duel.player.z=90; Duel.player.vz=100; Duel.strike(Duel.player); Duel.player.attack.time=0.20;`);
+shot('26-duel-air-slash');
+run(`Duel.start(); Duel.player.x=500; Duel.rival.x=680; Duel.strike(Duel.player); Duel.player.attack=null; Duel.player.attackCd=0; Duel.strike(Duel.player); Duel.player.attack.time=0.22;`);
+shot('27-duel-rising-cut');
+run(`Duel.player.attack=null; Duel.player.attackCd=0; Duel.strike(Duel.player); Duel.player.attack.time=0.20;`);
+shot('28-duel-thrust');
+run(`Duel.start(); Duel.player.x=500; Duel.rival.x=680; Duel.strike(Duel.player,'heavy'); Duel.player.attack.time=0.25;`);
+shot('29-duel-heavy');
+
 console.log('\nframes in', OUT);

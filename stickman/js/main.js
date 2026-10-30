@@ -66,7 +66,9 @@
       if (code === 'KeyP') { Duel.pause(); return; }
       if (Duel.phase === 'over' && (code === 'Enter' || code === 'Space')) { Duel.start(); return; }
       if (Duel.phase === 'fight') {
-        if (code === 'KeyF' || code === 'KeyJ' || code === 'Space') Duel.strike(Duel.player);
+        if (code === 'KeyF' || code === 'KeyJ') Duel.strike(Duel.player);
+        if (code === 'KeyE') Duel.strike(Duel.player, 'heavy');
+        if (code === 'Space' || code === 'KeyW' || code === 'ArrowUp') Duel.jump(Duel.player);
         if (code === 'ShiftLeft' || code === 'ShiftRight') {
           var dir = (Input.down('KeyD') || Input.down('ArrowRight') ? 1 : 0) - (Input.down('KeyA') || Input.down('ArrowLeft') ? 1 : 0);
           Duel.dodge(Duel.player, dir);
@@ -291,6 +293,8 @@
       if (button.setPointerCapture) button.setPointerCapture(e.pointerId);
       if (Game.state !== 'duel' || Duel.phase !== 'fight') return;
       if (kind === 'attack') Duel.strike(Duel.player);
+      else if (kind === 'heavy') Duel.strike(Duel.player, 'heavy');
+      else if (kind === 'jump') Duel.jump(Duel.player);
       else if (kind === 'dodge') Duel.dodge(Duel.player, (Duel.touch.right ? 1 : 0) - (Duel.touch.left ? 1 : 0));
       else Duel.touch[kind] = true;
     });
@@ -301,7 +305,8 @@
   }
   bindDuelButton('duel-left', 'left'); bindDuelButton('duel-right', 'right');
   bindDuelButton('duel-block', 'block'); bindDuelButton('duel-dodge', 'dodge');
-  bindDuelButton('duel-attack', 'attack');
+  bindDuelButton('duel-attack', 'attack'); bindDuelButton('duel-heavy', 'heavy');
+  bindDuelButton('duel-jump', 'jump');
 
   /* --------------------------------------------------------------- boot --- */
   Game.init(canvas);

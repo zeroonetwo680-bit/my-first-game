@@ -997,6 +997,79 @@ var fresh=Duel.player.hp===100 && Duel.clock===90;Duel.exit();
 fresh && Game.state==='menu' && Store.get('house1_complete',false)
 `, v => v === true);
 
+check('rapid taps buffer and chain three different sword moves', `
+Duel.start();var p=Duel.player,e=Duel.rival;e.think=50;
+Duel.strike(p);var first=p.attack.style;Duel.strike(p);
+for(var i=0;i<10;i++) Duel.update(0.05);
+var second=p.attack && p.attack.style;Duel.strike(p);
+for(var i=0;i<10;i++) Duel.update(0.05);
+first==='down' && second==='up' && p.attack && p.attack.style==='thrust'
+`, v => v === true);
+
+check('combo expires if the player waits too long', `
+Duel.start();var p=Duel.player;Duel.rival.think=50;Duel.strike(p);
+for(var i=0;i<30;i++) Duel.update(0.05);
+Duel.strike(p);p.attack.style==='down'
+`, v => v === true);
+
+check('a late tap during cooldown is buffered', `
+Duel.start();var p=Duel.player;Duel.rival.think=50;Duel.strike(p);
+for(var i=0;i<10;i++) Duel.update(0.05);
+var queued=Duel.strike(p);for(var i=0;i<3;i++) Duel.update(0.05);
+queued && p.attack && p.attack.style==='up'
+`, v => v === true);
+
+check('heavy sword strike is slower and deals extra damage and guard damage', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;
+Duel.strike(p,'heavy');var slow=p.attack.duration>0.48;Duel.hit(p,e);var damage=e.hp===68;
+p.attack=null;p.attackCd=0;e.block=true;Duel.strike(p,'heavy');Duel.hit(p,e);
+slow && damage && e.guard===50
+`, v => v === true);
+
+check('thrust has a longer reach than the first cut', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=685;
+Duel.strike(p);Duel.hit(p,e);var miss=e.hp===100;
+p.attack=null;p.attackCd=0;Duel.strike(p);p.attack=null;p.attackCd=0;
+Duel.strike(p);Duel.hit(p,e);miss && p.attack.style==='thrust' && e.hp===80
+`, v => v === true);
+
+check('jump rises, falls and lands; cannot double jump', `
+Duel.start();var p=Duel.player;Duel.rival.think=50;
+var started=Duel.jump(p), double=!Duel.jump(p);var peak=0;
+for(var i=0;i<100;i++){Duel.update(0.01);peak=Math.max(peak,p.z);}
+started && double && peak>100 && p.z===0 && p.vz===0 && Duel.jump(p)
+`, v => v === true);
+
+check('jump avoids a grounded slash at its apex but is not fully invulnerable', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;
+p.z=110;Duel.strike(e);Duel.hit(e,p);var avoided=p.hp===100;
+e.attack=null;e.attackCd=0;p.z=60;Duel.strike(e);Duel.hit(e,p);
+avoided && p.hp===80
+`, v => v === true);
+
+check('air attack is distinct and can hit from the air', `
+Duel.start();var p=Duel.player,e=Duel.rival;p.x=500;e.x=630;
+Duel.jump(p);Duel.strike(p);Duel.hit(p,e);
+p.attack.style==='air' && e.hp===78
+`, v => v === true);
+
+check('airborne fighters cannot block, dodge, or jump again', `
+Duel.start();var p=Duel.player;Duel.rival.think=50;Duel.jump(p);Duel.update(0.03);
+Input.keys.KeyS=true;Duel.update(0.01);var ok=!p.block&&!Duel.dodge(p,1)&&!Duel.jump(p);
+Input.keys.KeyS=false;ok
+`, v => v === true);
+
+check('pause freezes jump physics and airborne attack', `
+Duel.start();var p=Duel.player;Duel.jump(p);Duel.update(0.05);Duel.strike(p);
+Duel.pause();var z=p.z, t=p.attack.time;Duel.update(0.05);
+z===p.z && t===p.attack.time
+`, v => v === true);
+
+check('rematch resets jump, combo and buffered attacks', `
+Duel.start();Duel.jump(Duel.player);Duel.strike(Duel.player);Duel.strike(Duel.player);
+Duel.start();Duel.player.z===0 && Duel.player.vz===0 && Duel.player.combo===0 && !Duel.player.queued
+`, v => v === true);
+
 check('real duel render runs for fight, paused and result', `
 Game.init(document.getElementById('game'));Duel.start();Game.render();Duel.pause();Game.render();
 Duel.phase='over';Duel.result='YOU WIN';Game.render();true

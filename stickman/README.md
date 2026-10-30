@@ -12,15 +12,22 @@ Play: `stickman/index.html` (served from the repo root, so
 
 Choose **SWORD DUEL / VS CPU** on the main menu, or press **2**. One opponent,
 one 90-second round: reduce their health to zero, or have more health when time
-runs out. The AI approaches, swings and sometimes blocks.
+runs out. The AI approaches, attacks with varied cuts, sometimes jumps and blocks.
 
 | Action | Keyboard / mouse | Touch |
 | --- | --- | --- |
 | Move | `A` / `D` or left / right arrows | ◀ / ▶ |
-| Slash | `F`, `J`, space or left click | SLASH |
+| Light sword combo | `F`, `J` or left click | SLASH |
+| Heavy overhead cut | `E` | HEAVY |
+| Jump | `Space`, `W` or up arrow | JUMP |
 | Block | hold `S`, down arrow or right mouse button | hold BLOCK |
 | Dodge | `Shift` (with a direction, or away by default) | DODGE |
 | Pause / return to menu | `P` / `Escape` | tap the paused arena to resume |
+
+Tap SLASH repeatedly for a downward cut, rising cut and longer-reaching thrust.
+Quick taps are buffered. HEAVY is slower but deals more damage and removes more
+guard. Attack in the air for an aerial cut. Jumping at the right moment can evade
+a ground strike, but you cannot block or dodge in the air.
 
 The thinner **GUARD** bar drops on blocked hits; when empty, the fighter is
 briefly vulnerable. Dodge has a short cooldown. The result screen lets you retry
@@ -141,7 +148,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 114 checks: duel, house, supplies, swordsman, aim, melee and boss
+node test/smoke.js        # 125 checks: duel, house, supplies, swordsman, aim, melee and boss
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 
