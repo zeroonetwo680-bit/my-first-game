@@ -178,6 +178,7 @@ var Game = {
     this.pickups.length = 0;
     this.player = null;
     this.house = null;
+    this.blast = null; this.blasting = false;
   },
 
   startRun: function (skipWave) {
@@ -190,7 +191,7 @@ var Game = {
       arms: 1, powerCd: 0, regenT: 0, dead: false, deadT: 0,
       facing: 1, walkT: 0,
       weapon: 'pen', ammo: Infinity, muzzle: 0,
-      attack: null, meleeCd: 0, queuedMelee: null, comboStep: 0, comboTimer: 0
+      attack: null, meleeCd: 0, queuedMelee: null, comboStep: 0, comboTimer: 0, ink: 0
     };
     if (!skipWave) this.nextWave();
     return this.player;
@@ -216,7 +217,7 @@ var Game = {
     this.waveTimer = 0;
     this.toast = 0; this.toastText = '';
     this.enemies.length = 0; this.pending.length = 0;
-    this.bullets.length = 0; this.shots.length = 0;
+    this.bullets.length = 0; this.shots.length = 0; this.blast = null;
     this.pickups.length = 0; this.parts.length = 0;
     this.marks.length = 0; this.splats.length = 0;
     var p = this.player;
@@ -224,13 +225,14 @@ var Game = {
     p.vx = p.vy = 0; p.attack = null; p.queuedMelee = null;
     p.iframes = Math.max(p.iframes, 0.6);
     if (room > 1) p.hp = Math.min(p.maxhp, p.hp + 15);
-    var groups = [[], ['walker', 'walker', 'runner', 'walker'],
-      ['runner', 'thrower', 'walker', 'runner', 'brute'], ['boss']];
+    var groups = [[], ['walker', 'runner', 'walker', 'runner', 'walker'],
+      ['runner', 'thrower', 'walker', 'runner', 'brute', 'thrower'], ['boss']];
     var types = groups[room];
     for (var i = 0; i < types.length; i++) {
       var pos = room === 3 ? { x: 960, y: 360 } : this.edgePoint();
       // Do not spawn right on top of the entrance.
       if (pos.x < 380) pos.x = 600 + this.rng() * 400;
+      if (room === 1 && i === 0) { pos.x = 520; pos.y = H / 2 + 30; }
       this.pending.push({ type: types[i], x: pos.x, y: pos.y, t: 0.65 + i * 0.4 });
     }
     this.bannerText = room === 3 ? 'THE INK GUARDIAN' : 'ROOM ' + room + ' / 3';
@@ -253,7 +255,10 @@ var Game = {
           Sfx.choose();
         } else {
           h.exitOpen = true;
-          this.toastText = 'ROOM CLEAR - WALK TO THE OPEN DOOR';
+          // A useful, deterministic reward on the path to the exit.
+          if (this.pickups.length > 6) this.pickups.shift();
+          this.dropWeapon(W - 195, H / 2 - p.size * 0.4, h.room === 1 ? 'ruler' : 'compass');
+          this.toastText = 'ROOM CLEAR - PICK UP YOUR REWARD';
           this.toast = 3;
           Sfx.pickup();
         }
@@ -323,7 +328,7 @@ var Game = {
       phase: this.rng() * TAU, t: 0, hurt: 0, stun: 0,
       attackCd: 0, throwCd: 0.8 + this.rng() * 1.2,
       seed: 1 + Math.floor(this.rng() * 9999),
-      dead: false, deadT: 0, bossPhase: 'idle', bossTimer: 2.1, chargeX: 0, chargeY: 0
+      dead: false, deadT: 0, bossPhase: 'idle', bossTimer: 2.1, chargeX: 0, chargeY: 0, enraged: false
     };
     this.enemies.push(e);
     return e;
@@ -396,6 +401,11 @@ var Game = {
   },
 
   updateEffects: function (dt) {
+    if (this.blast && this.state === 'playing') {
+      this.blast.time = Math.max(0, this.blast.time - dt);
+      this.processBlast();
+      if (this.blast.time <= 0) this.blast = null;
+    }
     var i;
     for (i = this.parts.length - 1; i >= 0; i--) {
       var q = this.parts[i];
@@ -528,6 +538,53 @@ var Game = {
       }
     }
     if (progress >= 1) p.attack = null;
+  },
+
+  gainInk: function (amount) {
+    var p = this.player;
+    if (!p || p.dead || this.blasting) return;
+    var wasReady = p.ink >= 100;
+    p.ink = Math.min(100, p.ink + amount);
+    if (!wasReady && p.ink >= 100) {
+      this.toastText = 'INK BLAST READY - PRESS Q';
+      this.toast = 2.8;
+      if (typeof Sfx.pickup === 'function') Sfx.pickup();
+    }
+  },
+
+  activateBlast: function () {
+    var p = this.player;
+    if (this.state !== 'playing' || !p || p.dead || p.ink < 100 || this.blast) return false;
+    p.ink = 0;
+    p.iframes = Math.max(p.iframes, 0.38);
+    var radius = 225;
+    this.blast = { x: p.x, y: p.y - p.size * 0.4, groundY: p.y,
+      time: 0.48, duration: 0.48, radius: radius, hits: [] };
+    this.shake = Math.max(this.shake, 12);
+    this.processBlast();
+    if (typeof Sfx.blast === 'function') Sfx.blast();
+    else Sfx.dash();
+    return true;
+  },
+
+  processBlast: function () {
+    var b = this.blast;
+    if (!b) return;
+    var progress = 1 - b.time / b.duration;
+    var radius = b.radius * (0.25 + 0.75 * progress);
+    this.blasting = true;
+    try {
+      for (var i = 0; i < this.enemies.length; i++) {
+        var e = this.enemies[i];
+        if (!e.dead && b.hits.indexOf(e) === -1 && dist(b.x, b.groundY, e.x, e.y) <= radius + e.r) {
+          b.hits.push(e);
+          this.hurtEnemy(e, e.type === 'boss' ? 55 : 65, angleTo(b.x, b.groundY, e.x, e.y));
+        }
+      }
+    } finally { this.blasting = false; }
+    for (var j = this.shots.length - 1; j >= 0; j--) {
+      if (dist(b.x, b.y, this.shots[j].x, this.shots[j].y) <= radius) this.shots.splice(j, 1);
+    }
   },
 
   weaponDef: function () {
@@ -668,11 +725,16 @@ var Game = {
       var spd = e.speed * (e.stun > 0 ? 0.15 : 1);
 
       if (e.type === 'boss') {
+        if (!e.enraged && e.hp <= e.maxhp / 2) {
+          e.enraged = true;
+          this.toastText = 'THE GUARDIAN IS ENRAGED'; this.toast = 2.4;
+          this.shake = Math.max(this.shake, 7);
+        }
         e.bossTimer -= dt;
         if (e.bossPhase === 'idle') {
           e.x += ax * spd * dt; e.y += ay * spd * dt;
           if (e.bossTimer <= 0) {
-            e.bossPhase = 'windup'; e.bossTimer = 0.85;
+            e.bossPhase = 'windup'; e.bossTimer = e.enraged ? 0.65 : 0.85;
             e.chargeX = ax; e.chargeY = ay;
           }
         } else if (e.bossPhase === 'windup') {
@@ -680,7 +742,17 @@ var Game = {
         } else {
           e.x = clamp(e.x + e.chargeX * 330 * dt, 40, W - 40);
           e.y = clamp(e.y + e.chargeY * 330 * dt, 40, H - 40);
-          if (e.bossTimer <= 0) { e.bossPhase = 'idle'; e.bossTimer = 2.2; }
+          if (e.bossTimer <= 0) {
+            e.bossPhase = 'idle'; e.bossTimer = e.enraged ? 1.5 : 2.2;
+            if (e.enraged) {
+              for (var k = 0; k < 8; k++) {
+                var ba2 = k * TAU / 8;
+                this.shots.push({ x: e.x, y: e.y - e.size * 0.4,
+                  vx: Math.cos(ba2) * 210, vy: Math.sin(ba2) * 210,
+                  life: 2.2, r: 6, dmg: 7 });
+              }
+            }
+          }
         }
       } else if (e.type === 'thrower') {
         /* keep a working distance, then throw */
@@ -833,6 +905,7 @@ var Game = {
   hurtEnemy: function (e, dmg, dirA) {
     if (e.dead) return;
     e.hp -= dmg;
+    this.gainInk(Math.max(3, Math.min(12, dmg * 0.4)));
     e.hurt = 0.12;
     e.stun = Math.min(0.35, e.stun + 0.12);
     var push = (e.type === 'brute' || e.type === 'boss') ? 26 : 90;
@@ -847,6 +920,7 @@ var Game = {
     e.dead = true;
     e.deadT = 0;
     this.kills++;
+    this.gainInk(8);
     this.combo = Math.min(this.combo + 1, 9);
     this.comboTimer = 3.2;
     var mult = Math.max(1, this.combo);
@@ -1056,6 +1130,7 @@ var Game = {
     this.drawEnemies(ctx);
     this.drawPlayer(ctx);
     this.drawBullets(ctx);
+    this.drawBlast(ctx);
     this.drawParticles(ctx);
     this.drawFloats(ctx);
 
@@ -1395,7 +1470,11 @@ var Game = {
         ctx.save(); ctx.strokeStyle = 'rgba(194,45,48,0.7)'; ctx.lineWidth = 3;
         ctx.setLineDash([8, 8]); ctx.beginPath();
         ctx.moveTo(e.x, e.y); ctx.lineTo(e.x + e.chargeX * 260, e.y + e.chargeY * 260);
-        ctx.stroke(); ctx.setLineDash([]); ctx.restore();
+        ctx.stroke();
+        if (e.enraged) {
+          ctx.beginPath(); ctx.arc(e.x, e.y - e.size * 0.4, 42, 0, TAU); ctx.stroke();
+        }
+        ctx.setLineDash([]); ctx.restore();
       }
       if (e.dead) {
         /* fall over and fade out */
@@ -1637,6 +1716,24 @@ var Game = {
     }
   },
 
+  drawBlast: function (ctx) {
+    var b = this.blast;
+    if (!b) return;
+    var t = 1 - b.time / b.duration;
+    var r = b.radius * (0.25 + 0.75 * t);
+    ctx.save(); ctx.globalAlpha = (1 - t) * 0.8;
+    ctx.strokeStyle = '#b52e32'; ctx.lineWidth = 7 * (1 - t) + 2;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r, 0, TAU); ctx.stroke();
+    ctx.strokeStyle = '#302d2d'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(b.x, b.y, r * 0.82, 0, TAU); ctx.stroke();
+    for (var i = 0; i < 12; i++) {
+      var a = i * TAU / 12;
+      ctx.beginPath(); ctx.moveTo(b.x + Math.cos(a) * r * 0.8, b.y + Math.sin(a) * r * 0.8);
+      ctx.lineTo(b.x + Math.cos(a) * (r + 13), b.y + Math.sin(a) * (r + 13)); ctx.stroke();
+    }
+    ctx.restore();
+  },
+
   drawParticles: function (ctx) {
     for (var i = 0; i < this.parts.length; i++) {
       var q = this.parts[i];
@@ -1682,6 +1779,7 @@ var Game = {
       ctx.restore();
     }
     chip(16, 12, 300, 44);
+    chip(16, 64, 300, 42);
     chip(W / 2 - 62, 12, 124, 60);
     chip(W - 266, 12, 250, 62);
 
@@ -1702,6 +1800,13 @@ var Game = {
         ctx.fillRect(bx + i * (bw + 4) + 2, by + 2, bw - 4, bh - 4);
       }
     }
+
+    ctx.textAlign = 'left'; ctx.font = 'bold 11px ui-monospace, Menlo, monospace';
+    ctx.fillStyle = p.ink >= 100 ? '#ad292d' : 'rgba(24,24,28,0.65)';
+    ctx.fillText(p.ink >= 100 ? 'INK BLAST READY  •  PRESS Q' : 'INK BLAST  •  HIT TO CHARGE', 30, 80);
+    ctx.fillStyle = 'rgba(24,24,28,0.15)'; ctx.fillRect(30, 88, 258, 8);
+    ctx.fillStyle = p.ink >= 100 ? '#c52e31' : '#8b4c4a';
+    ctx.fillRect(30, 88, 258 * clamp(p.ink / 100, 0, 1), 8);
 
     /* wave */
     ctx.textAlign = 'center';
@@ -1731,7 +1836,7 @@ var Game = {
       var boss = this.enemies.find(function (e) { return e.type === 'boss' && !e.dead; });
       if (boss) {
         ctx.textAlign = 'center'; ctx.font = 'bold 12px ui-monospace, monospace';
-        ctx.fillStyle = '#a62e30'; ctx.fillText('THE INK GUARDIAN', W / 2, 96);
+        ctx.fillStyle = '#a62e30'; ctx.fillText(boss.enraged ? 'THE INK GUARDIAN  /  ENRAGED' : 'THE INK GUARDIAN', W / 2, 96);
         ctx.fillStyle = 'rgba(40,35,35,0.2)'; ctx.fillRect(W / 2 - 180, 104, 360, 9);
         ctx.fillStyle = '#b62e32'; ctx.fillRect(W / 2 - 180, 104, 360 * clamp(boss.hp / boss.maxhp, 0, 1), 9);
       }
@@ -1913,7 +2018,7 @@ var Game = {
     ctx.fillText('PRESS ENTER  /  CLICK FOR MAP', W / 2, 566);
     ctx.fillStyle = 'rgba(24,24,28,0.72)';
     ctx.font = 'bold 13px ui-monospace, Menlo, monospace';
-    ctx.fillText('E  KUNG FU COMBO     •     F  SWORD', W / 2, 592);
+    ctx.fillText('E  KUNG FU    •    F  SWORD    •    Q  INK BLAST', W / 2, 592);
 
     if (this.best > 0) {
       ctx.fillStyle = 'rgba(24,24,28,0.5)';

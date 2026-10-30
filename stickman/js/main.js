@@ -95,6 +95,7 @@
       if (code === 'ShiftLeft' || code === 'ShiftRight' || code === 'KeyK') Game.dash();
       if (code === 'KeyE') Game.startMelee('kungfu');
       if (code === 'KeyF') Game.startMelee('sword');
+      if (code === 'KeyQ') Game.activateBlast();
     }
   }
 
@@ -229,11 +230,13 @@
     if (!button) return;
     button.addEventListener('pointerdown', function (e) {
       e.preventDefault(); e.stopPropagation();
-      Sfx.unlock(); Game.startMelee(kind);
+      Sfx.unlock();
+      if (kind === 'blast') Game.activateBlast(); else Game.startMelee(kind);
     });
   }
   bindMeleeButton('kungfu-button', 'kungfu');
   bindMeleeButton('sword-button', 'sword');
+  bindMeleeButton('blast-button', 'blast');
 
   /* --------------------------------------------------------------- boot --- */
   Game.init(canvas);

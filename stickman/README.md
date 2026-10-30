@@ -13,9 +13,11 @@ Play: `stickman/index.html` (served from the repo root, so
 Open the map from the menu, then select **The First House**. Clear each room to
 unlock its door on the right; walk through to reach the next room. The first two
 rooms have different enemy groups, and the third contains the Ink Guardian, who
-telegraphs a charge with a red dashed line. Between the second room and the
-boss, choose a what-if power. Health recovers a little on entering each room;
-your score, equipped weapon, ammunition and powers carry between rooms.
+telegraphs a charge with a red dashed line. At half health the guardian gets
+faster and fires a radial volley after each charge. Between the second room and
+the boss, choose a what-if power. Health recovers a little on entering each room;
+your score, equipped weapon, ammunition and powers carry between rooms. Each
+cleared room drops a guaranteed tool on the path to the exit.
 
 Defeat the guardian to complete the house. Completion is saved locally in the
 browser and marked on the map. Houses 02 and 03 are placeholders, not playable
@@ -51,6 +53,7 @@ science fiction, the line under it is the science.
 | Dash | `Shift` or right click | (see roadmap) |
 | Kung fu | `E` (press twice for punch → kick) | KUNG FU button |
 | Sword | `F` | SWORD button |
+| Ink blast | `Q` when charged | INK BLAST button |
 | Pick up | walk over the tool | walk over the tool |
 | Pause / sound | `P` / `M` | — |
 
@@ -62,6 +65,14 @@ for a sweeping sword slash that can hit multiple enemies in front. Each strike
 has a wind-up, a single damage frame and recovery. The sword is always available
 and the equipped ranged weapon returns after the attack. On touch devices, use
 the on-screen KUNG FU and SWORD buttons.
+
+## Ink blast
+
+Hitting and defeating enemies fills the ink meter under the health bar. When it
+is full, press **Q** for an expanding shockwave: it damages enemies as it reaches
+them, clears hostile projectiles and grants a short invulnerability window.
+The meter resets after use and blast damage cannot charge itself. Touch players
+can use the INK BLAST button.
 
 ## Weapons — the page's own stationery
 
@@ -102,7 +113,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 81 checks: house, boss, rig, melee, weapons and powers
+node test/smoke.js        # 90 checks: house, boss, melee, blast, weapons and powers
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

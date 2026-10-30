@@ -706,7 +706,7 @@ kick.legR.foot.x > rest.legR.foot.x + 30 &&
 console.log('--- house adventure ---');
 check('map starts a three-room house with a locked exit', `
 Game.openMap(); var map = Game.state === 'map'; Game.startHouse();
-map && Game.state === 'playing' && Game.house.room === 1 && !Game.house.exitOpen && Game.pending.length === 4
+map && Game.state === 'playing' && Game.house.room === 1 && !Game.house.exitOpen && Game.pending.length === 5
 `, v => v === true);
 
 check('door stays locked while enemies or spawns remain', `
@@ -719,7 +719,7 @@ Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
 Game.player.hp = 70; Game.equipWeapon('ruler'); Game.player.ammo = 8; Game.powers.arms = true;
 Game.updateHouse(0.7); var open = Game.house.exitOpen;
 Game.player.x = W - 80; Game.player.y = H/2; Game.updateHouse(0.01);
-open && Game.house.room === 2 && Game.player.hp === 85 && Game.player.weapon === 'ruler' && Game.player.ammo === 8 && Game.powers.arms && Game.pending.length === 5
+open && Game.house.room === 2 && Game.player.hp === 85 && Game.player.weapon === 'ruler' && Game.player.ammo === 8 && Game.powers.arms && Game.pending.length === 6
 `, v => v === true);
 
 check('second door offers a power then opens the boss room', `
@@ -751,6 +751,86 @@ check('map, house, boss and victory draw without exceptions', `
 Game.openMap(); Game.render(); Game.startHouse(); Game.render(); Game.loadHouseRoom(3);
 Game.pending.length = 0; var e = Game.spawnEnemy('boss', 900, 360); e.bossPhase = 'windup'; Game.render();
 Game.state = 'victory'; Game.render(); true
+`, v => v === true);
+
+console.log('--- ink blast and combat rewards ---');
+check('hits and kills charge ink without exceeding the limit', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+var e = Game.spawnEnemy('brute', 500, 390); var p = Game.player;
+Game.hurtEnemy(e, 10, 0); var hit = p.ink;
+Game.hurtEnemy(e, 200, 0); var kill = p.ink;
+Game.gainInk(1000);
+hit > 0 && kill > hit && p.ink === 100
+`, v => v === true);
+
+check('blast requires charge and a live playing state', `
+Game.startHouse(); var p = Game.player; p.ink = 99;
+var low = !Game.activateBlast(); p.ink = 100; Game.state = 'paused';
+var paused = !Game.activateBlast() && p.ink === 100;
+Game.state = 'playing'; p.dead = true;
+low && paused && !Game.activateBlast()
+`, v => v === true);
+
+check('blast consumes meter, damages nearby enemies and clears only nearby hostile shots', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+var p = Game.player; p.ink = 100;
+var close = Game.spawnEnemy('brute', p.x + 100, p.y);
+var far = Game.spawnEnemy('brute', p.x + 600, p.y);
+Game.shots = [{x:p.x,y:p.y-49},{x:p.x+500,y:p.y-49}];
+Game.bullets = [{x:1,y:1}];
+var ok = Game.activateBlast(); Game.updateEffects(0.2);
+ok && p.ink === 0 && close.hp === close.maxhp - 65 && far.hp === far.maxhp &&
+  Game.shots.length === 1 && Game.bullets.length === 1 && p.iframes >= 0.38 && !!Game.blast
+`, v => v === true);
+
+check('blast kills do not instantly refill their own meter', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+var p = Game.player; p.ink = 100;
+for (var i = 0; i < 4; i++) Game.spawnEnemy('walker', p.x + 40 + i * 10, p.y);
+Game.activateBlast(); Game.updateEffects(0.48); p.ink === 0 && Game.kills === 4
+`, v => v === true);
+
+check('clearing each room drops a guaranteed reward beside the exit', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0; Game.updateHouse(0.7);
+var first = Game.pickups.some(k => k.w === 'ruler' && k.x === W - 195);
+Game.loadHouseRoom(2); Game.pending.length = 0; Game.enemies.length = 0; Game.updateHouse(0.7);
+first && Game.pickups.some(k => k.w === 'compass' && k.x === W - 195)
+`, v => v === true);
+
+check('enraged guardian launches a radial volley only after its charge', `
+Game.startHouse(); Game.loadHouseRoom(3); Game.pending.length = 0;
+var e = Game.spawnEnemy('boss', 900, 360); e.hp = e.maxhp/2; e.bossTimer = 0;
+Game.shots.length = 0; Game.updateEnemies(0.01);
+var windup = e.enraged && e.bossPhase === 'windup' && Game.shots.length === 0;
+Game.updateEnemies(0.7); var charge = e.bossPhase === 'charge' && Game.shots.length === 0;
+Game.updateEnemies(0.5);
+windup && charge && e.bossPhase === 'idle' && Game.shots.length === 8
+`, v => v === true);
+
+check('the expanding blast hits only when it reaches a target, and only once', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+var p = Game.player; p.ink=100;
+var e = Game.spawnEnemy('brute', p.x + 180, p.y);
+Game.activateBlast(); var before = e.hp;
+Game.updateEffects(0.1); var early = e.hp;
+Game.updateEffects(0.3); var after = e.hp;
+Game.updateEffects(0.05);
+before === e.maxhp && early === before && after === before - 65 && e.hp === after
+`, v => v === true);
+
+check('pausing freezes an active blast and prevents damage', `
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+var p = Game.player; p.ink=100;
+var e = Game.spawnEnemy('brute', p.x + 180, p.y);
+Game.activateBlast(); Game.state = 'paused'; Game.updateEffects(1);
+e.hp === e.maxhp && Game.blast && Game.blast.time === Game.blast.duration
+`, v => v === true);
+
+check('blast effect fades and does not leak into a new room', `
+Game.startHouse(); Game.player.ink=100; Game.activateBlast();
+Game.updateEffects(0.5); var faded = !Game.blast;
+Game.player.ink=100; Game.activateBlast(); Game.loadHouseRoom(2);
+faded && !Game.blast
 `, v => v === true);
 
 console.log('--- robustness ---');

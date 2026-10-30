@@ -231,4 +231,24 @@ shot('14-house-boss');
 run("Game.score=1840; Game.kills=10; Game.state='victory';");
 shot('15-house-victory');
 
+/* Combat pacing and the charged ink blast in real game frames. */
+run(`
+Game.startHouse(); Game.pending.length = 0; Game.enemies.length = 0;
+Game.banner = 0; Game.player.x = 530; Game.player.y = 450; Game.player.aim = 0;
+Game.player.iframes = 0; Game.player.ink = 100;
+Game.spawnEnemy('runner', 700, 410); Game.spawnEnemy('brute', 750, 500);
+Input.mouse.x = 900; Input.mouse.y = 450; Input.mouse.down = false;
+`);
+shot('16-ink-ready');
+run(`Game.activateBlast(); Game.updateEffects(0.31);`);
+shot('17-ink-blast');
+run(`
+Game.startHouse(); Game.loadHouseRoom(3); Game.pending.length = 0;
+var boss = Game.spawnEnemy('boss', 900, 410); boss.hp = boss.maxhp * 0.4;
+boss.enraged = true; boss.bossPhase = 'windup'; boss.chargeX = -1; boss.chargeY = 0;
+Game.banner = 0; Game.player.x = 420; Game.player.y = 410; Game.player.aim = 0;
+Game.player.iframes = 0;
+`);
+shot('18-boss-enraged');
+
 console.log('\nframes in', OUT);
