@@ -436,7 +436,10 @@ var Game = {
       if (p.ammo <= 0) this.expireWeapon();
     }
 
-    Sfx.shootFor(firedWeapon);
+    // A tab may still have the pre-weapons audio script cached after an update.
+    // Missing optional weapon sounds must never stop the animation loop.
+    if (typeof Sfx.shootFor === 'function') Sfx.shootFor(firedWeapon);
+    else if (typeof Sfx.shoot === 'function') Sfx.shoot();
   },
 
   expireWeapon: function () {

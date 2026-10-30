@@ -79,7 +79,7 @@ empties you are handed back the pen rather than left defenceless.
 ## Tests
 
 ```bash
-node test/smoke.js        # 66 checks: rig, combat, weapons, muzzle, powers, 2 minutes
+node test/smoke.js        # 67 checks: rig, combat, weapons, muzzle, powers, 2 minutes
 node tools/render.js      # writes real frames to /tmp/stickman for eyeballing
 ```
 

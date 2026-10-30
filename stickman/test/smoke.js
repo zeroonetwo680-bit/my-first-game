@@ -625,6 +625,19 @@ var hand = ePose.armPairs[0].right.hand;
 dist(shot.x, shot.y, hand.x, hand.y) < 20 && dist(shot.x, shot.y, e.x, e.y - e.size * 0.3) > 20
 `, v => v === true);
 
+check('shooting works with the old cached audio script', `
+Game.reset('playing'); Game.startRun();
+var old = Sfx.shootFor;
+var called = 0, oldShoot = Sfx.shoot;
+Sfx.shootFor = undefined;
+Sfx.shoot = function () { called++; };
+Game.player.fireCd = 0;
+Game.fire();
+var ok = Game.bullets.length > 0 && called === 1;
+Sfx.shootFor = old; Sfx.shoot = oldShoot;
+ok
+`, v => v === true);
+
 console.log('--- robustness ---');
 check('a huge frame delta is clamped, not simulated in one gulp', `
 Game.reset('playing'); Game.startRun();
