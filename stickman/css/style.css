@@ -1,0 +1,36 @@
+/* STICKMAN — the page the game is drawn on.
+ * The frame is dark so the sheet of paper reads as an object on a desk,
+ * and the letterbox bars stay part of the composition.
+ */
+html, body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+  background: #14110e;
+  background-image:
+    radial-gradient(ellipse at 50% 0%, #221c16 0%, #14110e 62%);
+}
+
+canvas#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  touch-action: none;
+  cursor: crosshair;
+  outline: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* the crosshair is drawn by the game itself while playing */
+canvas#game.idle { cursor: pointer; }
+
+noscript p {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #d9d0c2;
+  font: 600 16px ui-monospace, Menlo, monospace;
+}
